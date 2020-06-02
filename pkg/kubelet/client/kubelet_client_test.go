@@ -30,6 +30,7 @@ import (
 
 func TestMakeTransportInvalid(t *testing.T) {
 	config := &KubeletClientConfig{
+		EnableHTTPS: true,
 		//Invalid certificate and key path
 		TLSClientConfig: restclient.TLSClientConfig{
 			CertFile: "../../client/testdata/mycertinvalid.cer",
@@ -49,12 +50,13 @@ func TestMakeTransportInvalid(t *testing.T) {
 
 func TestMakeTransportValid(t *testing.T) {
 	config := &KubeletClientConfig{
-		Port: 1234,
+		Port:        1234,
+		EnableHTTPS: true,
 		TLSClientConfig: restclient.TLSClientConfig{
 			CertFile: "../../client/testdata/mycertvalid.cer",
-			// TLS Configuration
+			// TLS Configuration, only applies if EnableHTTPS is true.
 			KeyFile: "../../client/testdata/mycertvalid.key",
-			// TLS Configuration
+			// TLS Configuration, only applies if EnableHTTPS is true.
 			CAFile: "../../client/testdata/myCA.cer",
 		},
 	}
@@ -88,12 +90,13 @@ func TestMakeInsecureTransport(t *testing.T) {
 	}
 
 	config := &KubeletClientConfig{
-		Port: uint(port),
+		Port:        uint(port),
+		EnableHTTPS: true,
 		TLSClientConfig: restclient.TLSClientConfig{
 			CertFile: "../../client/testdata/mycertvalid.cer",
-			// TLS Configuration
+			// TLS Configuration, only applies if EnableHTTPS is true.
 			KeyFile: "../../client/testdata/mycertvalid.key",
-			// TLS Configuration
+			// TLS Configuration, only applies if EnableHTTPS is true.
 			CAFile: "../../client/testdata/myCA.cer",
 		},
 	}

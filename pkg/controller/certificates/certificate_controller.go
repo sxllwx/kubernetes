@@ -186,7 +186,7 @@ func (cc *CertificateController) syncFunc(key string) error {
 		return err
 	}
 
-	if len(csr.Status.Certificate) > 0 {
+	if csr.Status.Certificate != nil {
 		// no need to do anything because it already has a cert
 		return nil
 	}

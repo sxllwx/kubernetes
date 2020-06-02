@@ -35,7 +35,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	testclient "k8s.io/client-go/testing"
 	"k8s.io/client-go/util/cert"
-	"k8s.io/kubernetes/pkg/controller/certificates"
 
 	capihelper "k8s.io/kubernetes/pkg/apis/certificates/v1beta1"
 )
@@ -115,8 +114,6 @@ func TestHandle(t *testing.T) {
 		usages     []capi.KeyUsage
 		// whether the generated CSR should be marked as approved
 		approved bool
-		// whether the generated CSR should be marked as failed
-		failed bool
 		// the signerName to be set on the generated CSR
 		signerName string
 		// if true, expect an error to be returned
@@ -152,16 +149,9 @@ func TestHandle(t *testing.T) {
 			usages:     []capi.KeyUsage{capi.UsageServerAuth, capi.UsageClientAuth, capi.UsageDigitalSignature, capi.UsageKeyEncipherment},
 			approved:   true,
 			verify: func(t *testing.T, as []testclient.Action) {
-				if len(as) != 1 {
-					t.Errorf("expected one Update action but got %d", len(as))
+				if len(as) != 0 {
+					t.Errorf("expected no Update action but got %d", len(as))
 					return
-				}
-				csr := as[0].(testclient.UpdateAction).GetObject().(*capi.CertificateSigningRequest)
-				if len(csr.Status.Certificate) != 0 {
-					t.Errorf("expected no certificate to be issued")
-				}
-				if !certificates.HasTrueCondition(csr, capi.CertificateFailed) {
-					t.Errorf("expected Failed condition")
 				}
 			},
 		},
@@ -214,21 +204,6 @@ func TestHandle(t *testing.T) {
 				csr := as[0].(testclient.UpdateAction).GetObject().(*capi.CertificateSigningRequest)
 				if len(csr.Status.Certificate) == 0 {
 					t.Errorf("expected certificate to be issued but it was not")
-				}
-			},
-		},
-		{
-			name:       "should do nothing if failed",
-			signerName: "kubernetes.io/kubelet-serving",
-			commonName: "system:node:testnode",
-			org:        []string{"system:nodes"},
-			usages:     []capi.KeyUsage{capi.UsageServerAuth, capi.UsageDigitalSignature, capi.UsageKeyEncipherment},
-			dnsNames:   []string{"example.com"},
-			approved:   true,
-			failed:     true,
-			verify: func(t *testing.T, as []testclient.Action) {
-				if len(as) != 0 {
-					t.Errorf("expected no action to be taken")
 				}
 			},
 		},
@@ -292,7 +267,7 @@ func TestHandle(t *testing.T) {
 				// continue with rest of test
 			}
 
-			csr := makeTestCSR(csrBuilder{cn: c.commonName, signerName: c.signerName, approved: c.approved, failed: c.failed, usages: c.usages, org: c.org, dnsNames: c.dnsNames})
+			csr := makeTestCSR(csrBuilder{cn: c.commonName, signerName: c.signerName, approved: c.approved, usages: c.usages, org: c.org, dnsNames: c.dnsNames})
 			if err := s.handle(csr); err != nil && !c.err {
 				t.Errorf("unexpected err: %v", err)
 			}
@@ -311,7 +286,6 @@ type csrBuilder struct {
 	org        []string
 	signerName string
 	approved   bool
-	failed     bool
 	usages     []capi.KeyUsage
 }
 
@@ -342,11 +316,6 @@ func makeTestCSR(b csrBuilder) *capi.CertificateSigningRequest {
 	if b.approved {
 		csr.Status.Conditions = append(csr.Status.Conditions, capi.CertificateSigningRequestCondition{
 			Type: capi.CertificateApproved,
-		})
-	}
-	if b.failed {
-		csr.Status.Conditions = append(csr.Status.Conditions, capi.CertificateSigningRequestCondition{
-			Type: capi.CertificateFailed,
 		})
 	}
 	return csr

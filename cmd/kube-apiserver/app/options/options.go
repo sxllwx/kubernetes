@@ -120,6 +120,7 @@ func NewServerRunOptions() *ServerRunOptions {
 				string(api.NodeExternalDNS),
 				string(api.NodeExternalIP),
 			},
+			EnableHTTPS: true,
 			HTTPTimeout: time.Duration(5) * time.Second,
 		},
 		ServiceNodePortRange: kubeoptions.DefaultServiceNodePortRange,
@@ -199,9 +200,8 @@ func (s *ServerRunOptions) Flags() (fss cliflag.NamedFlagSets) {
 		"Example: '30000-32767'. Inclusive at both ends of the range.")
 
 	// Kubelet related flags:
-	kubeletHTTPS := true
-	fs.BoolVar(&kubeletHTTPS, "kubelet-https", kubeletHTTPS, "Use https for kubelet connections.")
-	fs.MarkDeprecated("kubelet-https", "API Server connections to kubelets always use https. This flag will be removed in 1.22.")
+	fs.BoolVar(&s.KubeletConfig.EnableHTTPS, "kubelet-https", s.KubeletConfig.EnableHTTPS,
+		"Use https for kubelet connections.")
 
 	fs.StringSliceVar(&s.KubeletConfig.PreferredAddressTypes, "kubelet-preferred-address-types", s.KubeletConfig.PreferredAddressTypes,
 		"List of the preferred NodeAddressTypes to use for kubelet connections.")

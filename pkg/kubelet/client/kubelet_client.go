@@ -41,6 +41,9 @@ type KubeletClientConfig struct {
 	// ReadOnlyPort specifies the Port for ReadOnly communications.
 	ReadOnlyPort uint
 
+	// EnableHTTPs specifies if traffic should be encrypted.
+	EnableHTTPS bool
+
 	// PreferredAddressTypes - used to select an address from Node.NodeStatus.Addresses
 	PreferredAddressTypes []string
 
@@ -136,7 +139,7 @@ func (c *KubeletClientConfig) transportConfig() *transport.Config {
 		},
 		BearerToken: c.BearerToken,
 	}
-	if !cfg.HasCA() {
+	if c.EnableHTTPS && !cfg.HasCA() {
 		cfg.TLS.Insecure = true
 	}
 	return cfg
@@ -173,6 +176,11 @@ type NodeConnectionInfoGetter struct {
 
 // NewNodeConnectionInfoGetter creates a new NodeConnectionInfoGetter.
 func NewNodeConnectionInfoGetter(nodes NodeGetter, config KubeletClientConfig) (ConnectionInfoGetter, error) {
+	scheme := "http"
+	if config.EnableHTTPS {
+		scheme = "https"
+	}
+
 	transport, err := MakeTransport(&config)
 	if err != nil {
 		return nil, err
@@ -189,7 +197,7 @@ func NewNodeConnectionInfoGetter(nodes NodeGetter, config KubeletClientConfig) (
 
 	return &NodeConnectionInfoGetter{
 		nodes:                          nodes,
-		scheme:                         "https",
+		scheme:                         scheme,
 		defaultPort:                    int(config.Port),
 		transport:                      transport,
 		insecureSkipTLSVerifyTransport: insecureSkipTLSVerifyTransport,

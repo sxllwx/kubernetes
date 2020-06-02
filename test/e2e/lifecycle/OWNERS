@@ -1,24 +1,8 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
 approvers:
-- luxas
-- timothysc
-- fabriziopandini
-- neolit123
-- rosti
-- ereslibre
+- sig-cluster-lifecycle-maintainers
 reviewers:
-- luxas
-- timothysc
-- fabriziopandini
-- neolit123
-- kad
-- detiber
-- dixudx
-- rosti
-- yagonobre
-- ereslibre
-- SataQiu
-- yastij
+- sig-cluster-lifecycle
 labels:
 - sig/cluster-lifecycle

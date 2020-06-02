@@ -174,7 +174,6 @@ func (c *fakeClient) Watch(_ context.Context, opts metav1.ListOptions) (watch.In
 
 func (c *fakeClient) generateCSR() *certificates.CertificateSigningRequest {
 	var condition certificates.CertificateSigningRequestCondition
-	var certificateData []byte
 	if c.failureType == certificateSigningRequestDenied {
 		condition = certificates.CertificateSigningRequestCondition{
 			Type: certificates.CertificateDenied,
@@ -183,7 +182,6 @@ func (c *fakeClient) generateCSR() *certificates.CertificateSigningRequest {
 		condition = certificates.CertificateSigningRequestCondition{
 			Type: certificates.CertificateApproved,
 		}
-		certificateData = []byte(`issued certificate`)
 	}
 
 	csr := certificates.CertificateSigningRequest{
@@ -194,7 +192,7 @@ func (c *fakeClient) generateCSR() *certificates.CertificateSigningRequest {
 			Conditions: []certificates.CertificateSigningRequestCondition{
 				condition,
 			},
-			Certificate: certificateData,
+			Certificate: []byte{},
 		},
 	}
 	return &csr

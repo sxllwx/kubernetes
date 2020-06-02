@@ -456,7 +456,6 @@ var _ = utils.SIGDescribe("PersistentVolumes-local ", func() {
 			ginkgo.By("Start a goroutine to recycle unbound PVs")
 			wg.Add(1)
 			go func() {
-				defer ginkgo.GinkgoRecover()
 				defer wg.Done()
 				w, err := config.client.CoreV1().PersistentVolumes().Watch(context.TODO(), metav1.ListOptions{})
 				framework.ExpectNoError(err)
