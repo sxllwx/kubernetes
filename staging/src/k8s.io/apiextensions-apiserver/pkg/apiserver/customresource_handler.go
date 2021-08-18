@@ -417,7 +417,11 @@ func (r *crdHandler) serveResource(w http.ResponseWriter, req *http.Request, req
 		return handlers.PatchResource(storage, requestScope, r.admission, supportedTypes)
 	case "delete":
 		allowsOptions := true
-		return handlers.DeleteResource(storage, allowsOptions, requestScope, r.admission)
+		klog.Infof("scott logger: hello world")
+		err := handlers.DeleteResource(storage, allowsOptions, requestScope, r.admission)
+		if err != nil{
+			klog.Infof("scott logger: delete logger: %v ", err)
+		}
 	case "deletecollection":
 		checkBody := true
 		return handlers.DeleteCollection(storage, checkBody, requestScope, r.admission)
