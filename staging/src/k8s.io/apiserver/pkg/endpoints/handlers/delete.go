@@ -179,6 +179,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 
 		namespace, err := scope.Namer.Namespace(req)
 		if err != nil {
+			panic(err)
 			scope.err(err, w, req)
 			return
 		}
@@ -193,18 +194,21 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 
 		outputMediaType, _, err := negotiation.NegotiateOutputMediaType(req, scope.Serializer, scope)
 		if err != nil {
+			panic(err)
 			scope.err(err, w, req)
 			return
 		}
 
 		listOptions := metainternalversion.ListOptions{}
 		if err := metainternalversionscheme.ParameterCodec.DecodeParameters(req.URL.Query(), scope.MetaGroupVersion, &listOptions); err != nil {
+			panic(err)
 			err = errors.NewBadRequest(err.Error())
 			scope.err(err, w, req)
 			return
 		}
 
 		if errs := metainternalversionvalidation.ValidateListOptions(&listOptions); len(errs) > 0 {
+			panic(err)
 			err := errors.NewInvalid(schema.GroupKind{Group: metav1.GroupName, Kind: "ListOptions"}, "", errs)
 			scope.err(err, w, req)
 			return
@@ -218,6 +222,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 			}
 			if listOptions.FieldSelector, err = listOptions.FieldSelector.Transform(fn); err != nil {
 				// TODO: allow bad request to set field causes based on query parameters
+				panic(err)
 				err = errors.NewBadRequest(err.Error())
 				scope.err(err, w, req)
 				return
@@ -228,12 +233,14 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 		if checkBody {
 			body, err := limitedReadBody(req, scope.MaxRequestBodyBytes)
 			if err != nil {
+				panic(err)
 				scope.err(err, w, req)
 				return
 			}
 			if len(body) > 0 {
 				s, err := negotiation.NegotiateInputSerializer(req, false, scope.Serializer)
 				if err != nil {
+					panic(err)
 					scope.err(err, w, req)
 					return
 				}
@@ -242,6 +249,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 				defaultGVK := scope.Kind.GroupVersion().WithKind("DeleteOptions")
 				obj, gvk, err := scope.Serializer.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
 				if err != nil {
+					panic(err)
 					scope.err(err, w, req)
 					return
 				}
@@ -275,6 +283,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 			return r.DeleteCollection(ctx, rest.AdmissionToValidateObjectDeleteFunc(admit, staticAdmissionAttrs, scope), options, &listOptions)
 		})
 		if err != nil {
+			panic(err)
 			scope.err(err, w, req)
 			return
 		}

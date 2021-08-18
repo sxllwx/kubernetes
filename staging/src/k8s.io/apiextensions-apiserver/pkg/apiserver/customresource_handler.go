@@ -422,11 +422,14 @@ func (r *crdHandler) serveResource(w http.ResponseWriter, req *http.Request, req
 		checkBody := true
 		klog.Infof("scott logger: hello world")
 		for _, v := range requestScope.Serializer.SupportedMediaTypes(){
-			klog.Infof("support media types: %#v", v)
+			klog.Infof("codec support media types: %#v", v)
+		}
+		for _, v := range requestScope.StandardSerializers{
+			klog.Infof("std support media types: %#v", v)
 		}
 		err := handlers.DeleteCollection(storage, checkBody, requestScope, r.admission)
 		if err != nil{
-			klog.Infof("scott logger: delete logger: %v ", err)
+			klog.Infof("scott logger: delete logger: %#v ", err)
 		}
 		return err
 	default:
