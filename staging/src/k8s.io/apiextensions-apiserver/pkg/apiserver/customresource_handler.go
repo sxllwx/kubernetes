@@ -417,15 +417,15 @@ func (r *crdHandler) serveResource(w http.ResponseWriter, req *http.Request, req
 		return handlers.PatchResource(storage, requestScope, r.admission, supportedTypes)
 	case "delete":
 		allowsOptions := true
+		return handlers.DeleteResource(storage, allowsOptions, requestScope, r.admission)
+	case "deletecollection":
+		checkBody := true
 		klog.Infof("scott logger: hello world")
-		err := handlers.DeleteResource(storage, allowsOptions, requestScope, r.admission)
+		err := handlers.DeleteCollection(storage, checkBody, requestScope, r.admission)
 		if err != nil{
 			klog.Infof("scott logger: delete logger: %v ", err)
 		}
 		return err
-	case "deletecollection":
-		checkBody := true
-		return handlers.DeleteCollection(storage, checkBody, requestScope, r.admission)
 	default:
 		responsewriters.ErrorNegotiated(
 			apierrors.NewMethodNotSupported(schema.GroupResource{Group: requestInfo.APIGroup, Resource: requestInfo.Resource}, requestInfo.Verb),
