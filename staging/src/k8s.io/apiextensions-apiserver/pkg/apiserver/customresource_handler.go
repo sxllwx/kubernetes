@@ -422,6 +422,7 @@ func (r *crdHandler) serveResource(w http.ResponseWriter, req *http.Request, req
 		if err != nil{
 			klog.Infof("scott logger: delete logger: %v ", err)
 		}
+		return err
 	case "deletecollection":
 		checkBody := true
 		return handlers.DeleteCollection(storage, checkBody, requestScope, r.admission)
