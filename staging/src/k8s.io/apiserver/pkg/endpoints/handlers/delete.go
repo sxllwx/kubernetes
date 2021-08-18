@@ -19,6 +19,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"net/http"
 	"time"
 
@@ -249,6 +250,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 				defaultGVK := scope.Kind.GroupVersion().WithKind("DeleteOptions")
 				obj, gvk, err := scope.Serializer.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
 				if err != nil {
+					klog.Infof("request header: %v, got body %s ", req.Header, body)
 					panic(err)
 					scope.err(err, w, req)
 					return
