@@ -24,27 +24,26 @@ import (
 
 	"k8s.io/klog/v2"
 
+	metainternalversionscheme "k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/rest"
 )
 
-var scheme = runtime.NewScheme()
+var deleteScheme = runtime.NewScheme()
 var parameterScheme = runtime.NewScheme()
-var codecs = serializer.NewCodecFactory(scheme)
-var parameterCodec = runtime.NewParameterCodec(parameterScheme)
+var deleteOptionsCodec = serializer.NewCodecFactory(deleteScheme)
+var dynamicParameterCodec = runtime.NewParameterCodec(parameterScheme)
 
 var versionV1 = schema.GroupVersion{Version: "v1"}
 
 func init() {
-	metav1.AddToGroupVersion(scheme, versionV1)
 	metav1.AddToGroupVersion(parameterScheme, versionV1)
-	utilruntime.Must(metav1.AddMetaToScheme(scheme))
+	metav1.AddToGroupVersion(deleteScheme, versionV1)
 }
 
 // Client allows callers to retrieve the object metadata for any
@@ -65,7 +64,7 @@ func ConfigFor(inConfig *rest.Config) *rest.Config {
 	config := rest.CopyConfig(inConfig)
 	config.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
 	config.ContentType = "application/vnd.kubernetes.protobuf"
-	config.NegotiatedSerializer = codecs.WithoutConversion()
+	config.NegotiatedSerializer = metainternalversionscheme.Codecs.WithoutConversion()
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
@@ -89,7 +88,7 @@ func NewForConfigOrDie(c *rest.Config) Interface {
 func NewForConfig(inConfig *rest.Config) (Interface, error) {
 	config := ConfigFor(inConfig)
 	// for serializing the options
-	config.GroupVersion = &versionV1
+	config.GroupVersion = &schema.GroupVersion{}
 	config.APIPath = "/this-value-should-never-be-sent"
 
 	restClient, err := rest.RESTClientFor(config)
@@ -125,23 +124,31 @@ func (c *client) Delete(ctx context.Context, name string, opts metav1.DeleteOpti
 	if len(name) == 0 {
 		return fmt.Errorf("name is required")
 	}
+	deleteOptionsByte, err := runtime.Encode(deleteOptionsCodec.LegacyCodec(schema.GroupVersion{Version: "v1"}), &opts)
+	if err != nil {
+		return err
+	}
 
 	result := c.client.client.
 		Delete().
 		AbsPath(append(c.makeURLSegments(name), subresources...)...).
-		Body(&opts).
+		Body(deleteOptionsByte).
 		Do(ctx)
 	return result.Error()
 }
 
 // DeleteCollection triggers deletion of all resources in the specified scope (namespace or cluster).
 func (c *client) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions, listOptions metav1.ListOptions) error {
+	deleteOptionsByte, err := runtime.Encode(deleteOptionsCodec.LegacyCodec(schema.GroupVersion{Version: "v1"}), &opts)
+	if err != nil {
+		return err
+	}
 
 	result := c.client.client.
 		Delete().
 		AbsPath(c.makeURLSegments("")...).
-		Body(&opts).
-		SpecificallyVersionedParams(&listOptions, parameterCodec, versionV1).
+		Body(deleteOptionsByte).
+		SpecificallyVersionedParams(&listOptions, dynamicParameterCodec, versionV1).
 		Do(ctx)
 	return result.Error()
 }
@@ -153,7 +160,7 @@ func (c *client) Get(ctx context.Context, name string, opts metav1.GetOptions, s
 	}
 	result := c.client.client.Get().AbsPath(append(c.makeURLSegments(name), subresources...)...).
 		SetHeader("Accept", "application/vnd.kubernetes.protobuf;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json").
-		SpecificallyVersionedParams(&opts, parameterCodec, versionV1).
+		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
 		Do(ctx)
 	if err := result.Error(); err != nil {
 		return nil, err
@@ -189,7 +196,7 @@ func (c *client) Get(ctx context.Context, name string, opts metav1.GetOptions, s
 func (c *client) List(ctx context.Context, opts metav1.ListOptions) (*metav1.PartialObjectMetadataList, error) {
 	result := c.client.client.Get().AbsPath(c.makeURLSegments("")...).
 		SetHeader("Accept", "application/vnd.kubernetes.protobuf;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json").
-		SpecificallyVersionedParams(&opts, parameterCodec, versionV1).
+		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
 		Do(ctx)
 	if err := result.Error(); err != nil {
 		return nil, err
@@ -228,7 +235,7 @@ func (c *client) Watch(ctx context.Context, opts metav1.ListOptions) (watch.Inte
 	return c.client.client.Get().
 		AbsPath(c.makeURLSegments("")...).
 		SetHeader("Accept", "application/vnd.kubernetes.protobuf;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json").
-		SpecificallyVersionedParams(&opts, parameterCodec, versionV1).
+		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
 		Timeout(timeout).
 		Watch(ctx)
 }
@@ -243,7 +250,7 @@ func (c *client) Patch(ctx context.Context, name string, pt types.PatchType, dat
 		AbsPath(append(c.makeURLSegments(name), subresources...)...).
 		Body(data).
 		SetHeader("Accept", "application/vnd.kubernetes.protobuf;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json").
-		SpecificallyVersionedParams(&opts, parameterCodec, versionV1).
+		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
 		Do(ctx)
 	if err := result.Error(); err != nil {
 		return nil, err
