@@ -128,6 +128,7 @@ func (c *client) Delete(ctx context.Context, name string, opts metav1.DeleteOpti
 	if err != nil {
 		return err
 	}
+	klog.Infof("delete collection: %s", deleteOptionsByte)
 
 	result := c.client.client.
 		Delete().
@@ -143,6 +144,7 @@ func (c *client) DeleteCollection(ctx context.Context, opts metav1.DeleteOptions
 	if err != nil {
 		return err
 	}
+	klog.Infof("delete collection: %s", deleteOptionsByte)
 
 	result := c.client.client.
 		Delete().
