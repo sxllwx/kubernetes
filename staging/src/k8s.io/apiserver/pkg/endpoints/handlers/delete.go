@@ -94,7 +94,7 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope *RequestSc
 				// It is also allowed to pass a body with meta.k8s.io/v1.DeleteOptions
 				defaultGVK := scope.MetaGroupVersion.WithKind("DeleteOptions")
 				obj, gvk, err := metainternalversionscheme.Codecs.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
-				klog.Infof("scott delete: will use codec %#v to decode GVK{%s} request: %v", s.Serializer, defaultGVK, err)
+				klog.Infof("scott delete: will use codec %#v to decode GVK{%s} request result: %v", s.Serializer, defaultGVK, err)
 				if err != nil {
 					scope.err(err, w, req)
 					return
@@ -243,7 +243,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope *RequestSc
 				// It is also allowed to pass a body with meta.k8s.io/v1.DeleteOptions
 				defaultGVK := scope.Kind.GroupVersion().WithKind("DeleteOptions")
 				obj, gvk, err := scope.Serializer.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
-				klog.Infof("scott delete collection: will use codec %#v to decode GVK{%s} request: %v", s.Serializer, defaultGVK, err)
+				klog.Infof("scott delete collection: will use codec %#v to decode GVK{%s} request, result: %v", s.Serializer, defaultGVK, err)
 				if err != nil {
 					scope.err(err, w, req)
 					return
