@@ -17,8 +17,10 @@ limitations under the License.
 package legacyscheme
 
 import (
+	metainternal "k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	runtimeutils "k8s.io/apimachinery/pkg/util/runtime"
 )
 
 var (
@@ -35,3 +37,7 @@ var (
 	// ParameterCodec handles versioning of objects that are converted to query parameters.
 	ParameterCodec = runtime.NewParameterCodec(Scheme)
 )
+
+func init(){
+	runtimeutils.Must(metainternal.AddToScheme(Scheme))
+}
