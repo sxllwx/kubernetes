@@ -19,6 +19,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog/v2"
 	"net/http"
 	"time"
 
@@ -93,6 +94,7 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope *RequestSc
 				// It is also allowed to pass a body with meta.k8s.io/v1.DeleteOptions
 				defaultGVK := scope.MetaGroupVersion.WithKind("DeleteOptions")
 				obj, gvk, err := metainternalversionscheme.Codecs.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
+				klog.Infof("scott: will use codec %#v to decode GVK{%s} request: %v", s.Serializer, defaultGVK, err)
 				if err != nil {
 					scope.err(err, w, req)
 					return
