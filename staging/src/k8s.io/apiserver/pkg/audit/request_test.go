@@ -22,12 +22,13 @@ import (
 	"testing"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
+	metainternalversionscheme "k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestMaybeTruncateUserAgent(t *testing.T) {
@@ -222,6 +223,36 @@ func TestCopyWithoutManagedFields(t *testing.T) {
 			// we always expect the original object to be unchanged.
 			if !cmp.Equal(original, test.object) {
 				t.Errorf("the original object has mutated, diff: %s", cmp.Diff(original, test.object))
+			}
+		})
+	}
+}
+
+func TestEncodeDeleteOptions(t *testing.T) {
+
+	policy := metav1.DeletePropagationBackground
+
+	tests := []struct {
+		name       string
+		object     runtime.Object
+		gv         schema.GroupVersion
+		serializer runtime.NegotiatedSerializer
+	}{
+		{
+			name: "encode to metav1.DeleteOptions",
+			object: &metav1.DeleteOptions{
+				PropagationPolicy: &policy,
+			},
+			gv:         schema.GroupVersion{Group: "meta.k8s.io", Version: "v1"},
+			serializer: metainternalversionscheme.Codecs,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := encodeObject(test.object, test.gv, test.serializer)
+			if err != nil {
+				t.Errorf("encode object: %v", err)
 			}
 		})
 	}
