@@ -541,11 +541,66 @@ EOF
 
     if [[ -z "${AUDIT_POLICY_FILE}" ]]; then
       cat <<EOF > /tmp/kube-audit-policy-file
-# Log all requests at the Metadata level.
 apiVersion: audit.k8s.io/v1
 kind: Policy
+omitStages:
+  - "RequestReceived"
 rules:
-- level: Metadata
+  - level: None
+    users: ["system:kube-proxy"]
+    verbs: ["watch"]
+    resources:
+      - group: ""
+        resources: ["endpoints", "services"]
+  - level: None
+    users: ["system:unsecured"]
+    namespaces: ["kube-system"]
+    verbs: ["get"]
+    resources:
+      - group: ""
+        resources: ["configmaps"]
+  - level: None
+    users: ["kubelet"]
+    verbs: ["get"]
+    resources:
+      - group: ""
+        resources: ["nodes"]
+  - level: None
+    userGroups: ["system:nodes"]
+    verbs: ["get"]
+    resources:
+      - group: ""
+        resources: ["nodes"]
+  - level: None
+    users:
+      - system:kube-controller-manager
+      - system:kube-scheduler
+      - system:serviceaccount:kube-system:endpoint-controller
+    verbs: ["get", "update"]
+    namespaces: ["kube-system"]
+    resources:
+      - group: ""
+        resources: ["endpoints"]
+  - level: None
+    users: ["system:apiserver"]
+    verbs: ["get"]
+    resources:
+      - group: ""
+        resources: ["namespaces"]
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /version
+      - /swagger*
+  - level: RequestResponse
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps"]
+      - group: authentication.k8s.io
+        resources: ["tokenreviews"]
+  - level: Request
+    verbs: ["get", "list", "watch"]
+  - level: RequestResponse
 EOF
       AUDIT_POLICY_FILE="/tmp/kube-audit-policy-file"
     fi
@@ -560,6 +615,7 @@ EOF
       --vmodule="${LOG_SPEC}" \
       --audit-policy-file="${AUDIT_POLICY_FILE}" \
       --audit-log-path="${LOG_DIR}/kube-apiserver-audit.log" \
+      --audit-webhook-config-file="/root/kube-watcher/hook.yaml" \
       --authorization-webhook-config-file="${AUTHORIZATION_WEBHOOK_CONFIG_FILE}" \
       --authentication-token-webhook-config-file="${AUTHENTICATION_WEBHOOK_CONFIG_FILE}" \
       --cert-dir="${CERT_DIR}" \
@@ -1111,7 +1167,7 @@ if [[ "${KUBETEST_IN_DOCKER:-}" == "true" ]]; then
   # to use docker installed containerd as kubelet container runtime
   # we need to enable cri and install cni
   # install cni for docker in docker
-  install_cni 
+  install_cni
 
   # enable cri for docker in docker
   echo "enable cri"
