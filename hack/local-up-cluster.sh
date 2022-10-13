@@ -581,6 +581,11 @@ EOF
       --requestheader-allowed-names=system:auth-proxy \
       --proxy-client-cert-file="${CERT_DIR}/client-auth-proxy.crt" \
       --proxy-client-key-file="${CERT_DIR}/client-auth-proxy.key" \
+      --audit-log-maxage=7 \
+      --audit-log-maxbackup=10 \
+      --audit-log-maxsize=100 \
+      --audit-log-path=/tmp/kubernetes.audit \
+      --audit-policy-file=/etc/kubernetes/audit-policy.yaml \
       --cors-allowed-origins="${API_CORS_ALLOWED_ORIGINS}" >"${APISERVER_LOG}" 2>&1 &
     APISERVER_PID=$!
 
