@@ -19,6 +19,7 @@ package handlers
 import (
 	"context"
 	"io"
+	"net/http"
 	"testing"
 
 	metainternalversionscheme "k8s.io/apimachinery/pkg/apis/meta/internalversion/scheme"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	auditapis "k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/apiserver/pkg/audit"
+	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
 	"k8s.io/utils/pointer"
 )
 
@@ -131,4 +133,28 @@ func TestDeleteResourceAuditLogRequestObject(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteCollection(t *testing.T) {
+
+	req := &http.Request{
+		Header: http.Header{},
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	s, err := negotiation.NegotiateInputSerializer(req, false, serializer.NewCodecFactory(runtime.NewScheme()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	options := &metav1.DeleteOptions{}
+	body := []byte("{}")
+
+	defaultGVK := metav1.SchemeGroupVersion.WithKind("DeleteOptions")
+	o, gvk, err := metainternalversionscheme.Codecs.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(o, gvk)
 }
