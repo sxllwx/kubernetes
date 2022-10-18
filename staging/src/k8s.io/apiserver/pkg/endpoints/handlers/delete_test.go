@@ -142,8 +142,11 @@ func TestDeleteCollection(t *testing.T) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Length", "2")
 
-	s, err := negotiation.NegotiateInputSerializer(req, false, serializer.NewCodecFactory(runtime.NewScheme()))
+	scheme := runtime.NewScheme()
+	codecs := serializer.NewCodecFactory(scheme)
+	s, err := negotiation.NegotiateInputSerializer(req, false, codecs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +155,10 @@ func TestDeleteCollection(t *testing.T) {
 	body := []byte("{}")
 
 	defaultGVK := metav1.SchemeGroupVersion.WithKind("DeleteOptions")
+	_, _, err = codecs.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
+	if err != nil {
+		t.Fatal(err)
+	}
 	o, gvk, err := metainternalversionscheme.Codecs.DecoderToVersion(s.Serializer, defaultGVK.GroupVersion()).Decode(body, &defaultGVK, options)
 	if err != nil {
 		t.Fatal(err)
