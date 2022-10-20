@@ -19,6 +19,7 @@ package customresourcedefinition
 import (
 	"context"
 	"fmt"
+	"k8s.io/apiextensions-apiserver/pkg/registry/customresourcedefinition/tableconvertor"
 
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,7 +55,7 @@ func NewREST(scheme *runtime.Scheme, optsGetter generic.RESTOptionsGetter) (*RES
 		ResetFieldsStrategy: strategy,
 
 		// TODO: define table converter that exposes more than name/creation timestamp
-		TableConvertor: rest.NewDefaultTableConvertor(apiextensions.Resource("customresourcedefinitions")),
+		TableConvertor: tableconvertor.New(),
 	}
 	options := &generic.StoreOptions{RESTOptions: optsGetter, AttrFunc: GetAttrs}
 	if err := store.CompleteWithOptions(options); err != nil {
