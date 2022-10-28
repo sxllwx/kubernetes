@@ -117,7 +117,6 @@ func EachListItem(obj runtime.Object, fn func(runtime.Object) error) error {
 	if unstructured, ok := obj.(runtime.Unstructured); ok {
 		return unstructured.EachListItem(fn)
 	}
-	// TODO: Change to an interface call?
 	itemsPtr, err := GetItemsPtr(obj)
 	if err != nil {
 		return err
@@ -126,38 +125,36 @@ func EachListItem(obj runtime.Object, fn func(runtime.Object) error) error {
 	if err != nil {
 		return err
 	}
-	len := items.Len()
-	if len == 0 {
-		return nil
-	}
-	takeAddr := false
-	if elemType := items.Type().Elem(); elemType.Kind() != reflect.Pointer && elemType.Kind() != reflect.Interface {
-		if !items.Index(0).CanAddr() {
-			return fmt.Errorf("unable to take address of items in %T for EachListItem", obj)
-		}
-		takeAddr = true
-	}
-
-	for i := 0; i < len; i++ {
+	itemsLen := items.Len()
+	for i := 0; i < itemsLen; i++ {
 		raw := items.Index(i)
-		if takeAddr {
-			raw = raw.Addr()
-		}
-		switch item := raw.Interface().(type) {
-		case *runtime.RawExtension:
-			if err := fn(item.Object); err != nil {
-				return err
+		switch {
+		case raw.Type() == rawExtensionObjectType:
+			item := raw.Interface().(runtime.RawExtension)
+			switch {
+			case item.Object != nil:
+				if err := fn(item.Object); err != nil {
+					return err
+				}
+			case item.Raw != nil:
+				// TODO: Set ContentEncoding and ContentType correctly.
+				if err := fn(&runtime.Unknown{Raw: item.Raw}); err != nil {
+					return err
+				}
+			default:
+				if err := fn(nil); err != nil {
+					return err
+				}
 			}
-		case runtime.Object:
-			if err := fn(item); err != nil {
+		case raw.Type().Implements(objectType):
+			if err := fn(raw.Interface().(runtime.Object)); err != nil {
 				return err
 			}
 		default:
-			obj, ok := item.(runtime.Object)
-			if !ok {
-				return fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
+			if !reflect.PointerTo(raw.Type()).Implements(objectType) {
+				return fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", items.Interface(), i, raw.Interface(), raw.Kind())
 			}
-			if err := fn(obj); err != nil {
+			if err := fn(raw.Addr().Interface().(runtime.Object)); err != nil {
 				return err
 			}
 		}
@@ -179,8 +176,9 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 	list := make([]runtime.Object, items.Len())
 	for i := range list {
 		raw := items.Index(i)
-		switch item := raw.Interface().(type) {
-		case runtime.RawExtension:
+		switch {
+		case raw.Type() == rawExtensionObjectType:
+			item := raw.Interface().(runtime.RawExtension)
 			switch {
 			case item.Object != nil:
 				list[i] = item.Object
@@ -190,7 +188,8 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 			default:
 				list[i] = nil
 			}
-		case runtime.Object:
+		case raw.Type().Implements(objectType):
+			item := raw.Interface().(runtime.Object)
 			list[i] = item
 		default:
 			var found bool
@@ -202,8 +201,109 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 	return list, nil
 }
 
-// objectSliceType is the type of a slice of Objects
-var objectSliceType = reflect.TypeOf([]runtime.Object{})
+// EachListItemWithAlloc invokes fn on each runtime.Object in the list.
+// the difference from  EachListItem is that an object of the same type is regenerated and assigned a value,
+// so that the returned Object list and obj have independent life cycles.
+func EachListItemWithAlloc(obj runtime.Object, fn func(runtime.Object) error) error {
+	if unstructured, ok := obj.(runtime.Unstructured); ok {
+		return unstructured.EachListItem(fn)
+	}
+	itemsPtr, err := GetItemsPtr(obj)
+	if err != nil {
+		return err
+	}
+	items, err := conversion.EnforcePtr(itemsPtr)
+	if err != nil {
+		return err
+	}
+	itemsLen := items.Len()
+	for i := 0; i < itemsLen; i++ {
+		raw := items.Index(i)
+		switch {
+		case raw.Type() == rawExtensionObjectType:
+			item := raw.Interface().(runtime.RawExtension)
+			switch {
+			case item.Object != nil:
+				if err := fn(item.Object); err != nil {
+					return err
+				}
+			case item.Raw != nil:
+				// TODO: Set ContentEncoding and ContentType correctly.
+				if err := fn(&runtime.Unknown{Raw: item.Raw}); err != nil {
+					return err
+				}
+			default:
+				if err := fn(nil); err != nil {
+					return err
+				}
+			}
+		case raw.Type().Implements(objectType):
+			if err := fn(raw.Interface().(runtime.Object)); err != nil {
+				return err
+			}
+		default:
+			if !reflect.PointerTo(raw.Type()).Implements(objectType) {
+				return fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", items.Interface(), i, raw.Interface(), raw.Kind())
+			}
+			new := reflect.New(raw.Type())
+			new.Elem().Set(raw)
+			if err := fn(new.Interface().(runtime.Object)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+var (
+	// objectSliceType is the type of a slice of Objects
+	objectSliceType        = reflect.TypeOf([]runtime.Object{})
+	objectType             = reflect.TypeOf((*runtime.Object)(nil)).Elem()
+	rawExtensionObjectType = reflect.TypeOf(runtime.RawExtension{})
+)
+
+// ExtractListWithAlloc returns obj's Items element as an array of runtime.Objects.
+// the difference from ExtractList is that an object of the same type is regenerated and assigned a value,
+// so that the returned Object list and obj have independent life cycles.
+// Returns an error if obj is not a List type (does not have an Items member).
+func ExtractListWithAlloc(obj runtime.Object) ([]runtime.Object, error) {
+	itemsPtr, err := GetItemsPtr(obj)
+	if err != nil {
+		return nil, err
+	}
+	items, err := conversion.EnforcePtr(itemsPtr)
+	if err != nil {
+		return nil, err
+	}
+	list := make([]runtime.Object, items.Len())
+	for i := range list {
+		raw := items.Index(i)
+		switch {
+		case raw.Type() == rawExtensionObjectType:
+			item := raw.Interface().(runtime.RawExtension)
+			switch {
+			case item.Object != nil:
+				list[i] = item.Object
+			case item.Raw != nil:
+				// TODO: Set ContentEncoding and ContentType correctly.
+				list[i] = &runtime.Unknown{Raw: item.Raw}
+			default:
+				list[i] = nil
+			}
+		case raw.Type().Implements(objectType):
+			item := raw.Interface().(runtime.Object)
+			list[i] = item
+		default:
+			if !reflect.PointerTo(raw.Type()).Implements(objectType) {
+				return nil, fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
+			}
+			new := reflect.New(raw.Type())
+			new.Elem().Set(raw)
+			list[i] = new.Interface().(runtime.Object)
+		}
+	}
+	return list, nil
+}
 
 // LenList returns the length of this list or 0 if it is not a list.
 func LenList(list runtime.Object) int {
@@ -238,7 +338,7 @@ func SetList(list runtime.Object, objects []runtime.Object) error {
 	slice := reflect.MakeSlice(items.Type(), len(objects), len(objects))
 	for i := range objects {
 		dest := slice.Index(i)
-		if dest.Type() == reflect.TypeOf(runtime.RawExtension{}) {
+		if dest.Type() == rawExtensionObjectType {
 			dest = dest.FieldByName("Object")
 		}
 

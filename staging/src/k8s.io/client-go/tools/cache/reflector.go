@@ -446,7 +446,7 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 	}
 	resourceVersion = listMetaInterface.GetResourceVersion()
 	initTrace.Step("Resource version extracted")
-	items, err := meta.ExtractList(list)
+	items, err := meta.ExtractListWithAlloc(list)
 	if err != nil {
 		return fmt.Errorf("unable to understand list result %#v (%v)", list, err)
 	}
