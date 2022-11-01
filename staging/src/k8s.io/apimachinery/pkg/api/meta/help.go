@@ -1,12 +1,9 @@
 /*
 Copyright 2015 The Kubernetes Authors.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -143,17 +140,17 @@ func EachListItem(obj runtime.Object, fn func(runtime.Object) error) error {
 		if takeAddr {
 			raw = raw.Addr()
 		}
-		switch item := raw.Interface().(type) {
-		case *runtime.RawExtension:
-			if err := fn(item.Object); err != nil {
+		switch {
+		case raw.Type() == rawExtensionObjectPointerType:
+			if err := fn(raw.Interface().(*runtime.RawExtension).Object); err != nil {
 				return err
 			}
-		case runtime.Object:
-			if err := fn(item); err != nil {
+		case raw.Type() == objectType:
+			if err := fn(raw.Interface().(runtime.Object)); err != nil {
 				return err
 			}
 		default:
-			obj, ok := item.(runtime.Object)
+			obj, ok := raw.Interface().(runtime.Object)
 			if !ok {
 				return fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
 			}
@@ -179,8 +176,9 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 	list := make([]runtime.Object, items.Len())
 	for i := range list {
 		raw := items.Index(i)
-		switch item := raw.Interface().(type) {
-		case runtime.RawExtension:
+		switch {
+		case raw.Type() == rawExtensionObjectType:
+			item := raw.Interface().(runtime.RawExtension)
 			switch {
 			case item.Object != nil:
 				list[i] = item.Object
@@ -190,8 +188,8 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 			default:
 				list[i] = nil
 			}
-		case runtime.Object:
-			list[i] = item
+		case raw.Type() == objectType:
+			list[i] = raw.Interface().(runtime.Object)
 		default:
 			var found bool
 			if list[i], found = raw.Addr().Interface().(runtime.Object); !found {
@@ -202,8 +200,13 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 	return list, nil
 }
 
-// objectSliceType is the type of a slice of Objects
-var objectSliceType = reflect.TypeOf([]runtime.Object{})
+var (
+	// objectSliceType is the type of a slice of Objects
+	objectSliceType               = reflect.TypeOf([]runtime.Object{})
+	objectType                    = reflect.TypeOf((*runtime.Object)(nil)).Elem()
+	rawExtensionObjectPointerType = reflect.TypeOf(&runtime.RawExtension{})
+	rawExtensionObjectType        = reflect.TypeOf(runtime.RawExtension{})
+)
 
 // LenList returns the length of this list or 0 if it is not a list.
 func LenList(list runtime.Object) int {
