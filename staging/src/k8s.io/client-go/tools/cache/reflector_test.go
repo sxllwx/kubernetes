@@ -1112,11 +1112,37 @@ func BenchmarkExtractPodList(b *testing.B) {
 	b.StopTimer()
 }
 
+func BenchmarkExtractPodListWithAlloc(b *testing.B) {
+	_, _, list := getPodListItems(0, fakePodItemsNum)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := meta.ExtractListWithAlloc(list)
+		if err != nil {
+			b.Fatalf("extract pod list: %v", err)
+		}
+	}
+	b.StopTimer()
+}
+
 func BenchmarkEachPodListItem(b *testing.B) {
 	_, _, list := getPodListItems(0, fakePodItemsNum)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		err := meta.EachListItem(list, func(object runtime.Object) error {
+			return nil
+		})
+		if err != nil {
+			b.Fatalf("extract pod list: %v", err)
+		}
+	}
+	b.StopTimer()
+}
+
+func BenchmarkEachPodListItemWithAlloc(b *testing.B) {
+	_, _, list := getPodListItems(0, fakePodItemsNum)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := meta.EachListItemWithAlloc(list, func(object runtime.Object) error {
 			return nil
 		})
 		if err != nil {
