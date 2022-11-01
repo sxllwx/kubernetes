@@ -212,42 +212,6 @@ func BenchmarkExtractRawExtensionList(b *testing.B) {
 	b.StopTimer()
 }
 
-func BenchmarkExtractSampleListWithAlloc(b *testing.B) {
-	list := getSampleList(fakeObjectItemsNum)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := ExtractListWithAlloc(list)
-		if err != nil {
-			b.Fatalf("extract sample list: %v", err)
-		}
-	}
-	b.StopTimer()
-}
-
-func BenchmarkExtractFooListWithAlloc(b *testing.B) {
-	list := getFooList(fakeObjectItemsNum)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := ExtractListWithAlloc(list)
-		if err != nil {
-			b.Fatalf("extract foo list: %v", err)
-		}
-	}
-	b.StopTimer()
-}
-
-func BenchmarkExtractRawExtensionListWithAlloc(b *testing.B) {
-	list := getRawExtensionList(fakeObjectItemsNum)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := ExtractListWithAlloc(list)
-		if err != nil {
-			b.Fatalf("extract RawExtension list: %v", err)
-		}
-	}
-	b.StopTimer()
-}
-
 func BenchmarkEachSampleListItem(b *testing.B) {
 
 	list := getSampleList(fakeObjectItemsNum)
@@ -282,48 +246,6 @@ func BenchmarkEachRawExtensionListItem(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		err := EachListItem(list, func(object runtime.Object) error {
-			return nil
-		})
-		if err != nil {
-			b.Fatalf("each RawExtension list: %v", err)
-		}
-	}
-	b.StopTimer()
-}
-
-func BenchmarkEachSampleListItemWithAlloc(b *testing.B) {
-	list := getSampleList(fakeObjectItemsNum)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		err := EachListItemWithAlloc(list, func(object runtime.Object) error {
-			return nil
-		})
-		if err != nil {
-			b.Fatalf("each smaple list item: %v", err)
-		}
-	}
-	b.StopTimer()
-}
-
-func BenchmarkEachFooListItemWithAlloc(b *testing.B) {
-	list := getFooList(fakeObjectItemsNum)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		err := EachListItemWithAlloc(list, func(object runtime.Object) error {
-			return nil
-		})
-		if err != nil {
-			b.Fatalf("each foo list: %v", err)
-		}
-	}
-	b.StopTimer()
-}
-
-func BenchmarkEachRawExtensionListItemWithAlloc(b *testing.B) {
-	list := getRawExtensionList(fakeObjectItemsNum)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		err := EachListItemWithAlloc(list, func(object runtime.Object) error {
 			return nil
 		})
 		if err != nil {
