@@ -123,7 +123,7 @@ func (p *ListPager) List(ctx context.Context, options metav1.ListOptions) (runti
 			list.ResourceVersion = m.GetResourceVersion()
 			list.SelfLink = m.GetSelfLink()
 		}
-		if err := meta.EachListItem(obj, func(obj runtime.Object) error {
+		if err := meta.EachListItemWithAlloc(obj, func(obj runtime.Object) error {
 			list.Items = append(list.Items, obj)
 			return nil
 		}); err != nil {
