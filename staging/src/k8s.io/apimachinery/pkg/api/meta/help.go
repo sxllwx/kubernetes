@@ -148,7 +148,7 @@ func EachListItem(obj runtime.Object, fn func(runtime.Object) error) error {
 			if err := fn(raw.Interface().(*runtime.RawExtension).Object); err != nil {
 				return err
 			}
-		case raw.Type() == objectType:
+		case raw.Type().Implements(objectType):
 			if err := fn(raw.Interface().(runtime.Object)); err != nil {
 				return err
 			}
@@ -208,7 +208,7 @@ func EachListItemWithAlloc(obj runtime.Object, fn func(runtime.Object) error) er
 				return err
 			}
 			reflect.New(rawExtensionObjectType)
-		case raw.Type() == objectType:
+		case raw.Type().Implements(objectType):
 			if err := fn(raw.Interface().(runtime.Object)); err != nil {
 				return err
 			}
@@ -251,7 +251,7 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 			default:
 				list[i] = nil
 			}
-		case raw.Type() == objectType:
+		case raw.Type().Implements(objectType):
 			list[i] = raw.Interface().(runtime.Object)
 		default:
 			var found bool
@@ -291,7 +291,7 @@ func ExtractListWithAlloc(obj runtime.Object) ([]runtime.Object, error) {
 			default:
 				list[i] = nil
 			}
-		case raw.Type() == objectType:
+		case raw.Type().Implements(objectType):
 			list[i] = raw.Interface().(runtime.Object)
 		default:
 			// shallow copy to avoid retaining a reference to the original list item
