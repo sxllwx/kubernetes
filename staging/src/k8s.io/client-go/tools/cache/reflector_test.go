@@ -1096,7 +1096,7 @@ func TestReflectorResourceVersionUpdate(t *testing.T) {
 }
 
 const (
-	fakePodItemsNum = 1000
+	fakePodItemsNum = 100
 	exemptPodIndex  = fakePodItemsNum / 4
 )
 
