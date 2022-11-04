@@ -143,17 +143,17 @@ func EachListItem(obj runtime.Object, fn func(runtime.Object) error) error {
 		if takeAddr {
 			raw = raw.Addr()
 		}
-		switch {
-		case raw.Type() == rawExtensionObjectPointerType:
-			if err := fn(raw.Interface().(*runtime.RawExtension).Object); err != nil {
+		switch item := raw.Interface().(type) {
+		case *runtime.RawExtension:
+			if err := fn(item.Object); err != nil {
 				return err
 			}
-		case raw.Type().Implements(objectType):
-			if err := fn(raw.Interface().(runtime.Object)); err != nil {
+		case runtime.Object:
+			if err := fn(item); err != nil {
 				return err
 			}
 		default:
-			obj, ok := raw.Interface().(runtime.Object)
+			obj, ok := item.(runtime.Object)
 			if !ok {
 				return fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
 			}
@@ -202,18 +202,17 @@ func EachListItemWithAlloc(obj runtime.Object, fn func(runtime.Object) error) er
 			// reflect.New will guarantee that new must be a pointer.
 			raw = new
 		}
-		switch {
-		case raw.Type() == rawExtensionObjectPointerType:
-			if err := fn(raw.Interface().(*runtime.RawExtension).Object); err != nil {
+		switch item := raw.Interface().(type) {
+		case *runtime.RawExtension:
+			if err := fn(item.Object); err != nil {
 				return err
 			}
-			reflect.New(rawExtensionObjectType)
-		case raw.Type().Implements(objectType):
-			if err := fn(raw.Interface().(runtime.Object)); err != nil {
+		case runtime.Object:
+			if err := fn(item); err != nil {
 				return err
 			}
 		default:
-			obj, ok := raw.Interface().(runtime.Object)
+			obj, ok := item.(runtime.Object)
 			if !ok {
 				return fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
 			}
@@ -309,10 +308,9 @@ func ExtractListWithAlloc(obj runtime.Object) ([]runtime.Object, error) {
 
 var (
 	// objectSliceType is the type of a slice of Objects
-	objectSliceType               = reflect.TypeOf([]runtime.Object{})
-	objectType                    = reflect.TypeOf((*runtime.Object)(nil)).Elem()
-	rawExtensionObjectPointerType = reflect.TypeOf(&runtime.RawExtension{})
-	rawExtensionObjectType        = reflect.TypeOf(runtime.RawExtension{})
+	objectSliceType        = reflect.TypeOf([]runtime.Object{})
+	objectType             = reflect.TypeOf((*runtime.Object)(nil)).Elem()
+	rawExtensionObjectType = reflect.TypeOf(runtime.RawExtension{})
 )
 
 // LenList returns the length of this list or 0 if it is not a list.
