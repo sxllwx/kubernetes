@@ -442,11 +442,11 @@ func (r *Reflector) list(stopCh <-chan struct{}) error {
 	r.setIsLastSyncResourceVersionUnavailable(false) // list was successful
 	listMetaInterface, err := meta.ListAccessor(list)
 	if err != nil {
-		return fmt.Errorf("unable to understand list result %#v: %v", list, err)
+		return fmt.Errorf("get list interface object %#v : %v", list, err)
 	}
 	resourceVersion = listMetaInterface.GetResourceVersion()
 	initTrace.Step("Resource version extracted")
-	items, err := meta.ExtractList(list)
+	items, err := meta.ExtractListWithAlloc(list)
 	if err != nil {
 		return fmt.Errorf("unable to understand list result %#v (%v)", list, err)
 	}

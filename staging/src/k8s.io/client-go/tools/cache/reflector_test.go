@@ -1467,6 +1467,70 @@ func BenchmarkEachListItem(b *testing.B) {
 	}
 }
 
+func BenchmarkExtractListWithAlloc(b *testing.B) {
+	_, _, podList := getPodListItems(0, fakeItemsNum)
+	_, _, configMapList := getConfigmapListItems(0, fakeItemsNum)
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "PodList",
+			list: podList,
+		},
+		{
+			name: "ConfigMapList",
+			list: configMapList,
+		},
+	}
+
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := meta.ExtractListWithAlloc(tc.list)
+				if err != nil {
+					b.Errorf("extract list with alloc: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
+func BenchmarkEachListItemWithAlloc(b *testing.B) {
+	_, _, podList := getPodListItems(0, fakeItemsNum)
+	_, _, configMapList := getConfigmapListItems(0, fakeItemsNum)
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "PodList",
+			list: podList,
+		},
+		{
+			name: "ConfigMapList",
+			list: configMapList,
+		},
+	}
+
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				err := meta.EachListItemWithAlloc(tc.list, func(object runtime.Object) error {
+					return nil
+				})
+				if err != nil {
+					b.Errorf("each list with alloc: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
 func BenchmarkReflectorList(b *testing.B) {
 	ctx, cancel := context.WithTimeout(context.Background(), wait.ForeverTestTimeout)
 	defer cancel()

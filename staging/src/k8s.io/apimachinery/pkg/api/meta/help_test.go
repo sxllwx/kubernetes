@@ -248,6 +248,72 @@ func BenchmarkEachListItem(b *testing.B) {
 	}
 }
 
+func BenchmarkExtractListItemWithAlloc(b *testing.B) {
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "FooList",
+			list: getFooList(fakeObjectItemsNum),
+		},
+		{
+			name: "SampleList",
+			list: getSampleList(fakeObjectItemsNum),
+		},
+		{
+			name: "RawExtensionList",
+			list: getRawExtensionList(fakeObjectItemsNum),
+		},
+	}
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := ExtractListWithAlloc(tc.list)
+				if err != nil {
+					b.Fatalf("ExtractListWithAlloc: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
+func BenchmarkEachListItemWithAlloc(b *testing.B) {
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "FooList",
+			list: getFooList(fakeObjectItemsNum),
+		},
+		{
+			name: "SampleList",
+			list: getSampleList(fakeObjectItemsNum),
+		},
+		{
+			name: "RawExtensionList",
+			list: getRawExtensionList(fakeObjectItemsNum),
+		},
+	}
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				err := EachListItemWithAlloc(tc.list, func(object runtime.Object) error {
+					return nil
+				})
+				if err != nil {
+					b.Fatalf("EachListItemWithAlloc: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
 func TestExtractList(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -416,6 +482,141 @@ func TestEachList(t *testing.T) {
 				t.Fatal("items first object cleared unexpect")
 			case <-ctx.Done():
 				return
+			}
+		})
+	}
+}
+
+func TestExtractListWithAlloc(t *testing.T) {
+	tests := []struct {
+		name         string
+		generateFunc func() (list runtime.Object, firstObjectPointer interface{})
+	}{
+		{
+			name: "FooList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := getFooList(fakeObjectItemsNum)
+				return out, &out.Items[0]
+			},
+		},
+		{
+			name: "SampleList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := getSampleList(fakeObjectItemsNum)
+				return out, &out.Items[0]
+			},
+		},
+		{
+			name: "RawExtensionList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := getRawExtensionList(fakeObjectItemsNum)
+				return out, &out.Items[0]
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), wait.ForeverTestTimeout)
+			defer cancel()
+			fakeContainer := map[int]interface{}{}
+			cleared := make(chan struct{})
+			func() {
+				list, firstObjectPointer := tc.generateFunc()
+				goruntime.SetFinalizer(firstObjectPointer, func(obj interface{}) {
+					close(cleared)
+				})
+				items, err := ExtractListWithAlloc(list)
+				if err != nil {
+					t.Errorf("extract list %#v: %v", list, err)
+				}
+				for i, item := range items {
+					fakeContainer[i] = item
+				}
+			}()
+
+			for k := range fakeContainer {
+				if k == exemptObjectIndex {
+					continue
+				}
+				// clear the object
+				delete(fakeContainer, k)
+				goruntime.GC()
+			}
+			select {
+			case <-cleared:
+				return
+			case <-ctx.Done():
+				t.Errorf("ExtractList %s can't be cleared", tc.name)
+			}
+		})
+	}
+}
+
+func TestEachListWithAlloc(t *testing.T) {
+	tests := []struct {
+		name         string
+		generateFunc func() (list runtime.Object, firstObjectPointer interface{})
+	}{
+		{
+			name: "FooList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := getFooList(fakeObjectItemsNum)
+				return out, &out.Items[0]
+			},
+		},
+		{
+			name: "SampleList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := getSampleList(fakeObjectItemsNum)
+				return out, &out.Items[0]
+			},
+		},
+		{
+			name: "RawExtensionList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := getRawExtensionList(fakeObjectItemsNum)
+				return out, &out.Items[0]
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), wait.ForeverTestTimeout)
+			defer cancel()
+			fakeContainer := map[int]interface{}{}
+			cleared := make(chan struct{})
+			func() {
+				list, firstObjectPointer := tc.generateFunc()
+				goruntime.SetFinalizer(firstObjectPointer, func(obj interface{}) {
+					close(cleared)
+				})
+
+				var index = 0
+				err := EachListItemWithAlloc(list, func(object runtime.Object) error {
+					fakeContainer[index] = object
+					index++
+					return nil
+				})
+				if err != nil {
+					t.Errorf("extract list %#v: %v", list, err)
+				}
+			}()
+
+			for k := range fakeContainer {
+				if k == exemptObjectIndex {
+					continue
+				}
+				// clear the object
+				delete(fakeContainer, k)
+				goruntime.GC()
+			}
+			select {
+			case <-cleared:
+				return
+			case <-ctx.Done():
+				t.Errorf("EachListItem %s can't be cleared", tc.name)
 			}
 		})
 	}
