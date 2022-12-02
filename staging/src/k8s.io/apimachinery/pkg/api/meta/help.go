@@ -118,8 +118,8 @@ func EachListItem(obj runtime.Object, fn func(runtime.Object) error) error {
 }
 
 // EachListItemWithAlloc invokes fn on each runtime.Object in the list.
-// the difference from  EachListItem is that an object of the same type is regenerated and assigned a value,
-// so that the returned Object list and obj have independent life cycles.
+// This differs from EachListItem by passing shallow-copies of struct items to `fn`
+// to avoid retaining references to memory belonging to the list.
 func EachListItemWithAlloc(obj runtime.Object, fn func(runtime.Object) error) error {
 	return eachListItem(obj, fn, true)
 }
@@ -195,9 +195,8 @@ func ExtractList(obj runtime.Object) ([]runtime.Object, error) {
 }
 
 // ExtractListWithAlloc returns obj's Items element as an array of runtime.Objects.
-// the difference from ExtractList is that an object of the same type is regenerated and assigned a value,
-// so that the returned Object list and obj have independent life cycles.
-// Returns an error if obj is not a List type (does not have an Items member).
+// This differs from ExtractList by returning shallow-copies of struct items to
+// avoid retaining references to memory belonging to the list.
 func ExtractListWithAlloc(obj runtime.Object) ([]runtime.Object, error) {
 	return extractList(obj, true)
 }
@@ -229,14 +228,7 @@ func extractList(obj runtime.Object, allocNew bool) ([]runtime.Object, error) {
 			}
 		case raw.Type().Implements(objectType):
 			list[i] = raw.Interface().(runtime.Object)
-		default:
-			if !allocNew {
-				var found bool
-				if list[i], found = raw.Addr().Interface().(runtime.Object); !found {
-					return nil, fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
-				}
-				continue
-			}
+		case allocNew:
 			// shallow copy to avoid retaining a reference to the original list item
 			itemCopy := reflect.New(raw.Type())
 			// assign to itemCopy and type-assert
@@ -244,6 +236,11 @@ func extractList(obj runtime.Object, allocNew bool) ([]runtime.Object, error) {
 			var ok bool
 			// reflect.New will guarantee that itemCopy must be a pointer.
 			if list[i], ok = itemCopy.Interface().(runtime.Object); !ok {
+				return nil, fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
+			}
+		default:
+			var found bool
+			if list[i], found = raw.Addr().Interface().(runtime.Object); !found {
 				return nil, fmt.Errorf("%v: item[%v]: Expected object, got %#v(%s)", obj, i, raw.Interface(), raw.Kind())
 			}
 		}
