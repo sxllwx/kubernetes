@@ -720,6 +720,12 @@ func (s *store) GetList(ctx context.Context, key string, opts storage.ListOption
 		numReturn := v.Len()
 		metrics.RecordStorageListMetrics(s.groupResourceString, numFetched, numEvald, numReturn)
 	}()
+
+	// store pointer of eligible objects,
+	// Why not directly put object in the items of listObj?
+	//   the elements in ListObject are Struct type, making slice will bring a lot of memory consumption.
+	//   so we try to delay this action as much as possible
+	var objs = make([]runtime.Object, 0, 0)
 	for {
 		startTime := time.Now()
 		getResp, err = s.client.KV.Get(ctx, preparedKey, options...)
@@ -741,17 +747,9 @@ func (s *store) GetList(ctx context.Context, key string, opts storage.ListOption
 			return fmt.Errorf("no results were found, but etcd indicated there were more values remaining")
 		}
 
-		// avoid small allocations for the result slice, since this can be called in many
-		// different contexts and we don't know how significantly the result will be filtered
-		if pred.Empty() {
-			growSlice(v, len(getResp.Kvs))
-		} else {
-			growSlice(v, 2048, len(getResp.Kvs))
-		}
-
 		// take items from the response until the bucket is full, filtering as we go
 		for i, kv := range getResp.Kvs {
-			if paging && int64(v.Len()) >= pred.Limit {
+			if paging && int64(len(objs)) >= pred.Limit {
 				hasMore = true
 				break
 			}
@@ -762,10 +760,15 @@ func (s *store) GetList(ctx context.Context, key string, opts storage.ListOption
 				return storage.NewInternalErrorf("unable to transform key %q: %v", kv.Key, err)
 			}
 
-			if err := appendListItem(v, data, uint64(kv.ModRevision), pred, s.codec, s.versioner, newItemFunc); err != nil {
+			objPtr := newItemFunc()
+			if err := decode(s.codec, s.versioner, data, objPtr, kv.ModRevision); err != nil {
 				recordDecodeError(s.groupResourceString, string(kv.Key))
 				return err
 			}
+			if matched, err := pred.Matches(objPtr); err == nil && matched {
+				objs = append(objs, objPtr)
+			}
+
 			numEvald++
 
 			// free kv early. Long lists can take O(seconds) to decode.
@@ -782,7 +785,7 @@ func (s *store) GetList(ctx context.Context, key string, opts storage.ListOption
 			break
 		}
 		// we're paging but we have filled our bucket
-		if int64(v.Len()) >= pred.Limit {
+		if int64(len(objs)) >= pred.Limit {
 			break
 		}
 
@@ -801,9 +804,10 @@ func (s *store) GetList(ctx context.Context, key string, opts storage.ListOption
 			options = append(options, clientv3.WithRev(withRev))
 		}
 	}
-	if v.IsNil() {
-		// Ensure that we never return a nil Items pointer in the result for consistency.
-		v.Set(reflect.MakeSlice(v.Type(), 0, 0))
+	// Resize the slice appropriately, since we already know that size of result set
+	v.Set(reflect.MakeSlice(v.Type(), len(objs), len(objs)))
+	for i, o := range objs {
+		v.Index(i).Set(reflect.ValueOf(o).Elem())
 	}
 
 	// instruct the client to begin querying from immediately after the last key we returned
@@ -829,37 +833,6 @@ func (s *store) GetList(ctx context.Context, key string, opts storage.ListOption
 
 	// no continuation
 	return s.versioner.UpdateList(listObj, uint64(returnedRV), "", nil)
-}
-
-// growSlice takes a slice value and grows its capacity up
-// to the maximum of the passed sizes or maxCapacity, whichever
-// is smaller. Above maxCapacity decisions about allocation are left
-// to the Go runtime on append. This allows a caller to make an
-// educated guess about the potential size of the total list while
-// still avoiding overly aggressive initial allocation. If sizes
-// is empty maxCapacity will be used as the size to grow.
-func growSlice(v reflect.Value, maxCapacity int, sizes ...int) {
-	cap := v.Cap()
-	max := cap
-	for _, size := range sizes {
-		if size > max {
-			max = size
-		}
-	}
-	if len(sizes) == 0 || max > maxCapacity {
-		max = maxCapacity
-	}
-	if max <= cap {
-		return
-	}
-	if v.Len() > 0 {
-		extra := reflect.MakeSlice(v.Type(), v.Len(), max)
-		reflect.Copy(extra, v)
-		v.Set(extra)
-	} else {
-		extra := reflect.MakeSlice(v.Type(), 0, max)
-		v.Set(extra)
-	}
 }
 
 // Watch implements storage.Interface.Watch.
@@ -1029,22 +1002,6 @@ func decode(codec runtime.Codec, versioner storage.Versioner, value []byte, objP
 	// being unable to set the version does not prevent the object from being extracted
 	if err := versioner.UpdateObject(objPtr, uint64(rev)); err != nil {
 		klog.Errorf("failed to update object version: %v", err)
-	}
-	return nil
-}
-
-// appendListItem decodes and appends the object (if it passes filter) to v, which must be a slice.
-func appendListItem(v reflect.Value, data []byte, rev uint64, pred storage.SelectionPredicate, codec runtime.Codec, versioner storage.Versioner, newItemFunc func() runtime.Object) error {
-	obj, _, err := codec.Decode(data, nil, newItemFunc())
-	if err != nil {
-		return err
-	}
-	// being unable to set the version does not prevent the object from being extracted
-	if err := versioner.UpdateObject(obj, rev); err != nil {
-		klog.Errorf("failed to update object version: %v", err)
-	}
-	if matched, err := pred.Matches(obj); err == nil && matched {
-		v.Set(reflect.Append(v, reflect.ValueOf(obj).Elem()))
 	}
 	return nil
 }
