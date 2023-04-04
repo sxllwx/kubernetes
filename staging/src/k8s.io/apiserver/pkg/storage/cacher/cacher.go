@@ -773,26 +773,18 @@ func (c *Cacher) GetList(ctx context.Context, key string, opts storage.ListOptio
 		return err
 	}
 	span.AddEvent("Listed items from cache", attribute.Int("count", len(objs)))
-	var filteredObjects []runtime.Object
 	for _, obj := range objs {
 		elem, ok := obj.(*storeElement)
 		if !ok {
 			return fmt.Errorf("non *storeElement returned from storage: %v", obj)
 		}
 		if filter(elem.Key, elem.Labels, elem.Fields) {
-			filteredObjects = append(filteredObjects, elem.Object)
+			listVal.Set(reflect.Append(listVal, reflect.ValueOf(elem.Object).Elem()))
 		}
 	}
-	if len(filteredObjects) == 0 {
+	if listVal.Len() == 0 {
 		// Ensure that we never return a nil Items pointer in the result for consistency.
 		listVal.Set(reflect.MakeSlice(listVal.Type(), 0, 0))
-	} else {
-		// Resize the slice appropriately, since we already know that size of result set
-		listVal.Set(reflect.MakeSlice(listVal.Type(), len(filteredObjects), len(filteredObjects)))
-		span.AddEvent("Resized result")
-		for i, o := range filteredObjects {
-			listVal.Index(i).Set(reflect.ValueOf(o).Elem())
-		}
 	}
 	span.AddEvent("Filtered items", attribute.Int("count", listVal.Len()))
 	if c.versioner != nil {
