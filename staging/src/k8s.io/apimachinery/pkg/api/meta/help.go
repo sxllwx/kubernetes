@@ -127,7 +127,16 @@ func EachListItemWithAlloc(obj runtime.Object, fn func(runtime.Object) error) er
 // allocNew: Whether shallow copy is required when the elements in Object.Items are struct
 func eachListItem(obj runtime.Object, fn func(runtime.Object) error, allocNew bool) error {
 	if unstructured, ok := obj.(runtime.Unstructured); ok {
-		return unstructured.EachListItem(fn)
+		final := fn
+		if allocNew {
+			final = func(obj runtime.Object) error {
+				raw := reflect.ValueOf(obj)
+				unstructuredPtr := reflect.New(raw.Type().Elem())
+				unstructuredPtr.Elem().Set(raw.Elem())
+				return fn(unstructuredPtr.Interface().(runtime.Object))
+			}
+		}
+		return unstructured.EachListItem(final)
 	}
 	// TODO: Change to an interface call?
 	itemsPtr, err := GetItemsPtr(obj)
@@ -164,7 +173,7 @@ func eachListItem(obj runtime.Object, fn func(runtime.Object) error, allocNew bo
 				raw = raw.Addr()
 			}
 		}
-		// raw must be a pointer
+		// raw must be a pointer or an interface
 		// allocate a pointer is cheap
 		switch item := raw.Interface().(type) {
 		case *runtime.RawExtension:
