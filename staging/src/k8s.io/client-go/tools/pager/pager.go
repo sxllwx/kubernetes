@@ -158,7 +158,7 @@ func (p *ListPager) List(ctx context.Context, options metav1.ListOptions) (runti
 // ListPager.PageBufferSize chunks buffered concurrently in the background.
 func (p *ListPager) EachListItem(ctx context.Context, options metav1.ListOptions, fn func(obj runtime.Object) error) error {
 	return p.eachListChunkBuffered(ctx, options, func(obj runtime.Object) error {
-		return meta.EachListItem(obj, fn)
+		return meta.EachListItemWithAlloc(obj, fn)
 	})
 }
 

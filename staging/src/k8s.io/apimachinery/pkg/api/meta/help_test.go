@@ -18,11 +18,13 @@ package meta
 
 import (
 	"context"
-	"fmt"
+	"reflect"
 	goruntime "runtime"
+	"strconv"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,6 +34,10 @@ const (
 	fakeObjectItemsNum = 1000
 	exemptObjectIndex  = fakeObjectItemsNum / 4
 )
+
+type SampleSpec struct {
+	Flied int
+}
 
 type FooSpec struct {
 	Flied int
@@ -44,35 +50,6 @@ type FooList struct {
 }
 
 func (s *FooList) DeepCopyObject() runtime.Object { return nil }
-
-// The difference between Sample and Foo is that the pointer of Sample
-// is the implementer of runtime.Object, while the Foo struct itself is
-// the implementer of runtime.Object. This difference affects the
-// behavior of ExtractList.
-type Sample struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec SampleSpec
-}
-
-type Foo struct {
-	metav1.TypeMeta
-	metav1.ObjectMeta
-	Spec FooSpec
-}
-
-func (f Foo) GetObjectKind() schema.ObjectKind {
-	tm := f.TypeMeta
-	return &tm
-}
-
-func (f Foo) DeepCopyObject() runtime.Object { return nil }
-
-type SampleSpec struct {
-	Flied int
-}
-
-func (s *Sample) DeepCopyObject() runtime.Object { return nil }
 
 type SampleList struct {
 	metav1.TypeMeta
@@ -89,11 +66,38 @@ type RawExtensionList struct {
 	Items []runtime.RawExtension
 }
 
-func (l RawExtensionList) DeepCopyObject() runtime.Object {
-	return nil
+func (l RawExtensionList) DeepCopyObject() runtime.Object { return nil }
+
+// NOTE: Foo struct itself is the implementer of runtime.Object.
+type Foo struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec FooSpec
 }
 
-func getSampleList(numItems int) *SampleList {
+func (f Foo) GetObjectKind() schema.ObjectKind {
+	tm := f.TypeMeta
+	return &tm
+}
+
+func (f Foo) DeepCopyObject() runtime.Object { return nil }
+
+// NOTE: the pointer of Sample that is the implementer of runtime.Object.
+// the behavior is similar to our corev1.Pod. corev1.Node
+type Sample struct {
+	metav1.TypeMeta
+	metav1.ObjectMeta
+	Spec SampleSpec
+}
+
+func (s *Sample) GetObjectKind() schema.ObjectKind {
+	tm := s.TypeMeta
+	return &tm
+}
+
+func (s *Sample) DeepCopyObject() runtime.Object { return nil }
+
+func fakeSampleList(numItems int) *SampleList {
 	out := &SampleList{
 		Items: make([]Sample, numItems),
 	}
@@ -105,7 +109,7 @@ func getSampleList(numItems int) *SampleList {
 				Kind:       "Sample",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("sample-%d", i),
+				Name:      strconv.Itoa(i),
 				Namespace: "default",
 				Labels: map[string]string{
 					"label-key-1": "label-value-1",
@@ -122,7 +126,7 @@ func getSampleList(numItems int) *SampleList {
 	return out
 }
 
-func getRawExtensionList(numItems int) *RawExtensionList {
+func fakeExtensionList(numItems int) *RawExtensionList {
 	out := &RawExtensionList{
 		Items: make([]runtime.RawExtension, numItems),
 	}
@@ -135,7 +139,7 @@ func getRawExtensionList(numItems int) *RawExtensionList {
 					Kind:       "Foo",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("foo-%d", i),
+					Name:      strconv.Itoa(i),
 					Namespace: "default",
 					Labels: map[string]string{
 						"label-key-1": "label-value-1",
@@ -153,7 +157,31 @@ func getRawExtensionList(numItems int) *RawExtensionList {
 	return out
 }
 
-func getFooList(numItems int) *FooList {
+func fakeUnstructuredList(numItems int) runtime.Unstructured {
+	out := &unstructured.UnstructuredList{
+		Items: make([]unstructured.Unstructured, numItems),
+	}
+
+	for i := range out.Items {
+		out.Items[i] = unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"metadata": map[string]interface{}{
+					"creationTimestamp": nil,
+					"name":              strconv.Itoa(i),
+				},
+				"spec": map[string]interface{}{
+					"hostname": "example.com",
+				},
+				"status": map[string]interface{}{},
+			},
+		}
+	}
+	return out
+}
+
+func fakeFooList(numItems int) *FooList {
 	out := &FooList{
 		Items: make([]Foo, numItems),
 	}
@@ -165,7 +193,7 @@ func getFooList(numItems int) *FooList {
 				Kind:       "Foo",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("foo-%d", i),
+				Name:      strconv.Itoa(i),
 				Namespace: "default",
 				Labels: map[string]string{
 					"label-key-1": "label-value-1",
@@ -182,167 +210,53 @@ func getFooList(numItems int) *FooList {
 	return out
 }
 
-func BenchmarkExtractListItem(b *testing.B) {
-	tests := []struct {
-		name string
-		list runtime.Object
-	}{
-		{
-			name: "FooList",
-			list: getFooList(fakeObjectItemsNum),
-		},
-		{
-			name: "SampleList",
-			list: getSampleList(fakeObjectItemsNum),
-		},
-		{
-			name: "RawExtensionList",
-			list: getRawExtensionList(fakeObjectItemsNum),
-		},
-	}
-	for _, tc := range tests {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := ExtractList(tc.list)
-				if err != nil {
-					b.Fatalf("ExtractList: %v", err)
-				}
-			}
-			b.StopTimer()
-		})
-	}
-}
-
-func BenchmarkEachListItem(b *testing.B) {
-	tests := []struct {
-		name string
-		list runtime.Object
-	}{
-		{
-			name: "FooList",
-			list: getFooList(fakeObjectItemsNum),
-		},
-		{
-			name: "SampleList",
-			list: getSampleList(fakeObjectItemsNum),
-		},
-		{
-			name: "RawExtensionList",
-			list: getRawExtensionList(fakeObjectItemsNum),
-		},
-	}
-	for _, tc := range tests {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				err := EachListItem(tc.list, func(object runtime.Object) error {
-					return nil
-				})
-				if err != nil {
-					b.Fatalf("EachListItem: %v", err)
-				}
-			}
-			b.StopTimer()
-		})
-	}
-}
-
-func BenchmarkExtractListItemWithAlloc(b *testing.B) {
-	tests := []struct {
-		name string
-		list runtime.Object
-	}{
-		{
-			name: "FooList",
-			list: getFooList(fakeObjectItemsNum),
-		},
-		{
-			name: "SampleList",
-			list: getSampleList(fakeObjectItemsNum),
-		},
-		{
-			name: "RawExtensionList",
-			list: getRawExtensionList(fakeObjectItemsNum),
-		},
-	}
-	for _, tc := range tests {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				_, err := ExtractListWithAlloc(tc.list)
-				if err != nil {
-					b.Fatalf("ExtractListWithAlloc: %v", err)
-				}
-			}
-			b.StopTimer()
-		})
-	}
-}
-
-func BenchmarkEachListItemWithAlloc(b *testing.B) {
-	tests := []struct {
-		name string
-		list runtime.Object
-	}{
-		{
-			name: "FooList",
-			list: getFooList(fakeObjectItemsNum),
-		},
-		{
-			name: "SampleList",
-			list: getSampleList(fakeObjectItemsNum),
-		},
-		{
-			name: "RawExtensionList",
-			list: getRawExtensionList(fakeObjectItemsNum),
-		},
-	}
-	for _, tc := range tests {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				err := EachListItemWithAlloc(tc.list, func(object runtime.Object) error {
-					return nil
-				})
-				if err != nil {
-					b.Fatalf("EachListItemWithAlloc: %v", err)
-				}
-			}
-			b.StopTimer()
-		})
-	}
-}
-
-func TestExtractList(t *testing.T) {
+func TestMemoryBehaviorExtractList(t *testing.T) {
 	tests := []struct {
 		name            string
-		generateFunc    func() (list runtime.Object, firstObjectPointer interface{})
+		generateFunc    func(num int) (list runtime.Object, firstObjectPointer interface{})
+		numObject       int
 		shouldBeCleared bool
 	}{
 		{
 			name: "FooList",
-			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getFooList(fakeObjectItemsNum)
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeFooList(num)
 				return out, &out.Items[0]
 			},
+			numObject:       fakeObjectItemsNum,
 			shouldBeCleared: true,
 		},
 		{
 			name: "SampleList",
-			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getSampleList(fakeObjectItemsNum)
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeSampleList(num)
 				return out, &out.Items[0]
 			},
+			numObject:       fakeObjectItemsNum,
 			shouldBeCleared: false,
 		},
 		{
 			name: "RawExtensionList",
-			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getRawExtensionList(fakeObjectItemsNum)
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeExtensionList(num)
 				return out, &out.Items[0]
 			},
+			numObject:       fakeObjectItemsNum,
 			shouldBeCleared: true,
+			// NOTE:
+			// although EachListItem takes the address of the elements of items,
+			// but it uses items.Object instead of items.
+			// so the items slice will be cleared.
+		},
+		{
+			name: "UnstructuredList",
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeUnstructuredList(num)
+				unstructuredList := out.(*unstructured.UnstructuredList)
+				return out, &unstructuredList.Items[0]
+			},
+			numObject:       fakeObjectItemsNum,
+			shouldBeCleared: false,
 		},
 	}
 
@@ -353,19 +267,9 @@ func TestExtractList(t *testing.T) {
 			fakeContainer := map[int]interface{}{}
 			cleared := make(chan struct{})
 			func() {
-				list, firstObjectPointer := tc.generateFunc()
+				list, firstObjectPointer := tc.generateFunc(tc.numObject)
 				goruntime.SetFinalizer(firstObjectPointer, func(obj interface{}) {
-					select {
-					case <-ctx.Done():
-						// test-case already finished
-						return
-					default:
-					}
-					if tc.shouldBeCleared {
-						close(cleared)
-						return
-					}
-					t.Errorf("object %#v unepxect cleared", obj)
+					close(cleared)
 				})
 				items, err := ExtractList(list)
 				if err != nil {
@@ -397,39 +301,53 @@ func TestExtractList(t *testing.T) {
 	}
 }
 
-func TestEachList(t *testing.T) {
+func TestMemoryBehaviorEachList(t *testing.T) {
 	tests := []struct {
 		name            string
-		generateFunc    func() (list runtime.Object, firstObjectPointer interface{})
+		generateFunc    func(num int) (list runtime.Object, firstObjectPointer interface{})
+		expectObjectNum int
 		shouldBeCleared bool
 	}{
 		{
 			name: "FooList",
-			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getFooList(fakeObjectItemsNum)
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeFooList(num)
 				return out, &out.Items[0]
 			},
-			shouldBeCleared: false,
+			expectObjectNum: fakeObjectItemsNum,
+			shouldBeCleared: true,
 		},
 		{
 			name: "SampleList",
-			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getSampleList(fakeObjectItemsNum)
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeSampleList(num)
 				return out, &out.Items[0]
 			},
+			expectObjectNum: fakeObjectItemsNum,
 			shouldBeCleared: false,
 		},
 		{
 			name: "RawExtensionList",
-			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getRawExtensionList(fakeObjectItemsNum)
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeExtensionList(num)
 				return out, &out.Items[0]
 			},
+			expectObjectNum: fakeObjectItemsNum,
 			// NOTE:
 			// although EachListItem takes the address of the elements of items,
 			// but it uses items.Object instead of items.
 			// so the items slice will be cleared.
 			shouldBeCleared: true,
+		},
+		{
+			name: "UnstructuredList",
+			generateFunc: func(num int) (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeUnstructuredList(num)
+				unstructuredList := out.(*unstructured.UnstructuredList)
+				return out, &unstructuredList.Items[0]
+			},
+			expectObjectNum: fakeObjectItemsNum,
+			shouldBeCleared: false,
 		},
 	}
 
@@ -440,19 +358,9 @@ func TestEachList(t *testing.T) {
 			fakeContainer := map[int]interface{}{}
 			cleared := make(chan struct{})
 			func() {
-				list, firstObjectPointer := tc.generateFunc()
+				list, firstObjectPointer := tc.generateFunc(tc.expectObjectNum)
 				goruntime.SetFinalizer(firstObjectPointer, func(obj interface{}) {
-					select {
-					case <-ctx.Done():
-						// test-case already finished
-						return
-					default:
-					}
-					if tc.shouldBeCleared {
-						close(cleared)
-						return
-					}
-					t.Errorf("object %#v unepxect cleared", obj)
+					close(cleared)
 				})
 
 				var index = 0
@@ -487,7 +395,7 @@ func TestEachList(t *testing.T) {
 	}
 }
 
-func TestExtractListWithAlloc(t *testing.T) {
+func TestMemoryBehaviorExtractListWithAlloc(t *testing.T) {
 	tests := []struct {
 		name         string
 		generateFunc func() (list runtime.Object, firstObjectPointer interface{})
@@ -495,21 +403,21 @@ func TestExtractListWithAlloc(t *testing.T) {
 		{
 			name: "FooList",
 			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getFooList(fakeObjectItemsNum)
+				out := fakeFooList(fakeObjectItemsNum)
 				return out, &out.Items[0]
 			},
 		},
 		{
 			name: "SampleList",
 			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getSampleList(fakeObjectItemsNum)
+				out := fakeSampleList(fakeObjectItemsNum)
 				return out, &out.Items[0]
 			},
 		},
 		{
 			name: "RawExtensionList",
 			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getRawExtensionList(fakeObjectItemsNum)
+				out := fakeExtensionList(fakeObjectItemsNum)
 				return out, &out.Items[0]
 			},
 		},
@@ -547,13 +455,13 @@ func TestExtractListWithAlloc(t *testing.T) {
 			case <-cleared:
 				return
 			case <-ctx.Done():
-				t.Errorf("ExtractList %s can't be cleared", tc.name)
+				t.Errorf("ExtractListWithAlloc %s can't be cleared", tc.name)
 			}
 		})
 	}
 }
 
-func TestEachListWithAlloc(t *testing.T) {
+func TestMemoryBehaviorEachListWithAlloc(t *testing.T) {
 	tests := []struct {
 		name         string
 		generateFunc func() (list runtime.Object, firstObjectPointer interface{})
@@ -561,22 +469,30 @@ func TestEachListWithAlloc(t *testing.T) {
 		{
 			name: "FooList",
 			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getFooList(fakeObjectItemsNum)
+				out := fakeFooList(fakeObjectItemsNum)
 				return out, &out.Items[0]
 			},
 		},
 		{
 			name: "SampleList",
 			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getSampleList(fakeObjectItemsNum)
+				out := fakeSampleList(fakeObjectItemsNum)
 				return out, &out.Items[0]
 			},
 		},
 		{
 			name: "RawExtensionList",
 			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
-				out := getRawExtensionList(fakeObjectItemsNum)
+				out := fakeExtensionList(fakeObjectItemsNum)
 				return out, &out.Items[0]
+			},
+		},
+		{
+			name: "UnstructuredList",
+			generateFunc: func() (list runtime.Object, firstObjectPointer interface{}) {
+				out := fakeUnstructuredList(fakeObjectItemsNum)
+				unstructuredList := out.(*unstructured.UnstructuredList)
+				return out, &unstructuredList.Items[0]
 			},
 		},
 	}
@@ -616,8 +532,331 @@ func TestEachListWithAlloc(t *testing.T) {
 			case <-cleared:
 				return
 			case <-ctx.Done():
-				t.Errorf("EachListItem %s can't be cleared", tc.name)
+				t.Errorf("EachListItemWithAlloc %s can't be cleared", tc.name)
 			}
+		})
+	}
+}
+
+func TestEachList(t *testing.T) {
+	tests := []struct {
+		name            string
+		generateFunc    func(num int) (list runtime.Object)
+		expectObjectNum int
+	}{
+		{
+			name: "FooList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeFooList(num)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+		{
+			name: "SampleList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeSampleList(num)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+		{
+			name: "RawExtensionList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeExtensionList(num)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+		{
+			name: "UnstructuredList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeUnstructuredList(fakeObjectItemsNum)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("EachListItem", func(t *testing.T) {
+				expectObjectNames := map[string]struct{}{}
+				for i := 0; i < tc.expectObjectNum; i++ {
+					expectObjectNames[strconv.Itoa(i)] = struct{}{}
+				}
+				list := tc.generateFunc(tc.expectObjectNum)
+				err := EachListItem(list, func(object runtime.Object) error {
+					o, err := Accessor(object)
+					if err != nil {
+						return err
+					}
+					delete(expectObjectNames, o.GetName())
+					return nil
+				})
+				if err != nil {
+					t.Errorf("each list item %#v: %v", list, err)
+				}
+				if len(expectObjectNames) != 0 {
+					t.Fatal("expectObjectNames should be empty")
+				}
+			})
+			t.Run("EachListItemWithAlloc", func(t *testing.T) {
+				expectObjectNames := map[string]struct{}{}
+				for i := 0; i < tc.expectObjectNum; i++ {
+					expectObjectNames[strconv.Itoa(i)] = struct{}{}
+				}
+				list := tc.generateFunc(tc.expectObjectNum)
+				err := EachListItemWithAlloc(list, func(object runtime.Object) error {
+					o, err := Accessor(object)
+					if err != nil {
+						return err
+					}
+					delete(expectObjectNames, o.GetName())
+					return nil
+				})
+				if err != nil {
+					t.Errorf("each list %#v with alloc: %v", list, err)
+				}
+				if len(expectObjectNames) != 0 {
+					t.Fatal("expectObjectNames should be empty")
+				}
+			})
+		})
+	}
+}
+
+func TestExtractList(t *testing.T) {
+	tests := []struct {
+		name            string
+		generateFunc    func(num int) (list runtime.Object)
+		expectObjectNum int
+	}{
+		{
+			name: "FooList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeFooList(num)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+		{
+			name: "SampleList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeSampleList(num)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+		{
+			name: "RawExtensionList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeExtensionList(num)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+		{
+			name: "UnstructuredList",
+			generateFunc: func(num int) (list runtime.Object) {
+				return fakeUnstructuredList(fakeObjectItemsNum)
+			},
+			expectObjectNum: fakeObjectItemsNum,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Run("ExtractList", func(t *testing.T) {
+				expectObjectNames := map[string]struct{}{}
+				for i := 0; i < tc.expectObjectNum; i++ {
+					expectObjectNames[strconv.Itoa(i)] = struct{}{}
+				}
+				list := tc.generateFunc(tc.expectObjectNum)
+				objs, err := ExtractList(list)
+				if err != nil {
+					t.Fatalf("extract list %#v: %v", list, err)
+				}
+				for i := range objs {
+					var (
+						o   metav1.Object
+						err error
+						obj = objs[i]
+					)
+
+					if reflect.TypeOf(obj).Kind() == reflect.Struct {
+						copy := reflect.New(reflect.TypeOf(obj))
+						copy.Elem().Set(reflect.ValueOf(obj))
+						o, err = Accessor(copy.Interface())
+					} else {
+						o, err = Accessor(obj)
+					}
+					if err != nil {
+						t.Fatalf("Accessor object %#v: %v", obj, err)
+					}
+					delete(expectObjectNames, o.GetName())
+				}
+				if len(expectObjectNames) != 0 {
+					t.Fatal("expectObjectNames should be empty")
+				}
+			})
+			t.Run("ExtractListWithAlloc", func(t *testing.T) {
+				expectObjectNames := map[string]struct{}{}
+				for i := 0; i < tc.expectObjectNum; i++ {
+					expectObjectNames[strconv.Itoa(i)] = struct{}{}
+				}
+				list := tc.generateFunc(tc.expectObjectNum)
+				objs, err := ExtractListWithAlloc(list)
+				if err != nil {
+					t.Fatalf("extract list with alloc: %v", err)
+				}
+				for i := range objs {
+					var (
+						o   metav1.Object
+						err error
+						obj = objs[i]
+					)
+					if reflect.TypeOf(obj).Kind() == reflect.Struct {
+						copy := reflect.New(reflect.TypeOf(obj))
+						copy.Elem().Set(reflect.ValueOf(obj))
+						o, err = Accessor(copy.Interface())
+					} else {
+						o, err = Accessor(obj)
+					}
+					if err != nil {
+						t.Fatalf("Accessor object %#v: %v", obj, err)
+					}
+					delete(expectObjectNames, o.GetName())
+				}
+				if len(expectObjectNames) != 0 {
+					t.Fatal("expectObjectNames should be empty")
+				}
+			})
+		})
+	}
+}
+
+func BenchmarkExtractListItem(b *testing.B) {
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "FooList",
+			list: fakeFooList(fakeObjectItemsNum),
+		},
+		{
+			name: "SampleList",
+			list: fakeSampleList(fakeObjectItemsNum),
+		},
+		{
+			name: "RawExtensionList",
+			list: fakeExtensionList(fakeObjectItemsNum),
+		},
+	}
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := ExtractList(tc.list)
+				if err != nil {
+					b.Fatalf("ExtractList: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
+func BenchmarkEachListItem(b *testing.B) {
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "FooList",
+			list: fakeFooList(fakeObjectItemsNum),
+		},
+		{
+			name: "SampleList",
+			list: fakeSampleList(fakeObjectItemsNum),
+		},
+		{
+			name: "RawExtensionList",
+			list: fakeExtensionList(fakeObjectItemsNum),
+		},
+	}
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				err := EachListItem(tc.list, func(object runtime.Object) error {
+					return nil
+				})
+				if err != nil {
+					b.Fatalf("EachListItem: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
+func BenchmarkExtractListItemWithAlloc(b *testing.B) {
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "FooList",
+			list: fakeFooList(fakeObjectItemsNum),
+		},
+		{
+			name: "SampleList",
+			list: fakeSampleList(fakeObjectItemsNum),
+		},
+		{
+			name: "RawExtensionList",
+			list: fakeExtensionList(fakeObjectItemsNum),
+		},
+	}
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := ExtractListWithAlloc(tc.list)
+				if err != nil {
+					b.Fatalf("ExtractListWithAlloc: %v", err)
+				}
+			}
+			b.StopTimer()
+		})
+	}
+}
+
+func BenchmarkEachListItemWithAlloc(b *testing.B) {
+	tests := []struct {
+		name string
+		list runtime.Object
+	}{
+		{
+			name: "FooList",
+			list: fakeFooList(fakeObjectItemsNum),
+		},
+		{
+			name: "SampleList",
+			list: fakeSampleList(fakeObjectItemsNum),
+		},
+		{
+			name: "RawExtensionList",
+			list: fakeExtensionList(fakeObjectItemsNum),
+		},
+	}
+	for _, tc := range tests {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				err := EachListItemWithAlloc(tc.list, func(object runtime.Object) error {
+					return nil
+				})
+				if err != nil {
+					b.Fatalf("EachListItemWithAlloc: %v", err)
+				}
+			}
+			b.StopTimer()
 		})
 	}
 }
