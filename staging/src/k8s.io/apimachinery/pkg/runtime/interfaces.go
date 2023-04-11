@@ -365,4 +365,8 @@ type Unstructured interface {
 	// error should terminate the iteration. If IsList() returns false, this method should return an error
 	// instead of calling the provided function.
 	EachListItem(func(Object) error) error
+	// EachListItemWithAlloc invokes fn on each runtime.Object in the list.
+	// This differs from EachListItem by passing shallow-copies of struct items to `fn`
+	// to avoid retaining references to memory belonging to the list.
+	EachListItemWithAlloc(func(Object) error) error
 }
