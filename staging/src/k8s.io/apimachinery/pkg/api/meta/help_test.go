@@ -778,6 +778,10 @@ func BenchmarkEachListItem(b *testing.B) {
 			name: "RawExtensionList",
 			list: fakeExtensionList(fakeObjectItemsNum),
 		},
+		{
+			name: "UnstructuredList",
+			list: fakeUnstructuredList(fakeObjectItemsNum),
+		},
 	}
 	for _, tc := range tests {
 		b.Run(tc.name, func(b *testing.B) {
@@ -843,6 +847,10 @@ func BenchmarkEachListItemWithAlloc(b *testing.B) {
 		{
 			name: "RawExtensionList",
 			list: fakeExtensionList(fakeObjectItemsNum),
+		},
+		{
+			name: "UnstructuredList",
+			list: fakeUnstructuredList(fakeObjectItemsNum),
 		},
 	}
 	for _, tc := range tests {
