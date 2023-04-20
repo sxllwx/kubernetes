@@ -24,6 +24,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	e2eskipper "k8s.io/kubernetes/test/e2e/framework/skipper"
 	"net"
 	"os/exec"
 	"regexp"
@@ -35,6 +37,7 @@ import (
 	"golang.org/x/net/websocket"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/test/e2e/framework"
 	e2ekubectl "k8s.io/kubernetes/test/e2e/framework/kubectl"
@@ -115,6 +118,38 @@ func pfPod(expectedClientData, chunks, chunkSize, chunkIntervalMillis string, bi
 							Name:  "BIND_ADDRESS",
 							Value: bindAddress,
 						},
+					},
+				},
+			},
+			RestartPolicy: v1.RestartPolicyNever,
+		},
+	}
+}
+
+func pfNeverReadRequestBodyPod() *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "issue-74551",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "server",
+					Image: imageutils.GetE2EImage(imageutils.Agnhost),
+					Args:  []string{"netexec"},
+					ReadinessProbe: &v1.Probe{
+						ProbeHandler: v1.ProbeHandler{
+							HTTPGet: &v1.HTTPGetAction{
+								Path: "/healthz",
+								Port: intstr.IntOrString{
+									IntVal: int32(8080),
+								},
+								Scheme: v1.URISchemeHTTP,
+							},
+						},
+						InitialDelaySeconds: 5,
+						TimeoutSeconds:      60,
+						PeriodSeconds:       1,
 					},
 				},
 			},
@@ -205,6 +240,45 @@ func runPortForward(ns, podName string, port int) *portForwardCommand {
 		cmd:  cmd,
 		port: listenPort,
 	}
+}
+
+func doTestConnectionNeverReadRequest(ctx context.Context, bindAddress string, f *framework.Framework) {
+	ginkgo.By("Creating the target pod")
+	pod := pfNeverReadRequestBodyPod()
+	if _, err := f.ClientSet.CoreV1().Pods(f.Namespace.Name).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
+		framework.Failf("Couldn't create pod: %v", err)
+	}
+	if err := e2epod.WaitTimeoutForPodReadyInNamespace(ctx, f.ClientSet, pod.Name, f.Namespace.Name, framework.PodStartTimeout); err != nil {
+		framework.Failf("Pod did not start running: %v", err)
+	}
+
+	ginkgo.By("Running 'kubectl port-forward'")
+	cmd := runPortForward(f.Namespace.Name, pod.Name, 8080)
+	defer cmd.Stop()
+
+	ginkgo.By("Requesting the local port")
+	for sentBodySize := 0; sentBodySize < 1024*1024*512; {
+		// try to mock a big request.
+		size := rand.Intn(4 * 1024 * 1024)
+		_, err := post(fmt.Sprintf("http://localhost:8080/header"), strings.NewReader(strings.Repeat("x", size)), nil)
+		if err != nil {
+			framework.Failf("post data to Pod: %v", err)
+		}
+		sentBodySize += size
+	}
+
+	ginkgo.By("Waiting for the target pod to stop running")
+	if err := WaitForTerminatedContainer(ctx, f, pod, "server"); err != nil {
+		framework.Failf("Container did not terminate: %v", err)
+	}
+
+	ginkgo.By("Verifying logs")
+	gomega.Eventually(ctx, func() (string, error) {
+		return e2epod.GetPodLogs(ctx, f.ClientSet, f.Namespace.Name, pod.Name, "server")
+	}, postStartWaitTimeout, podCheckInterval).Should(gomega.SatisfyAll(
+		gomega.ContainSubstring("Started HTTP server on port 8080"),
+		gomega.ContainSubstring("GET /header"),
+	))
 }
 
 func doTestConnectSendDisconnect(ctx context.Context, bindAddress string, f *framework.Framework) {
@@ -491,6 +565,11 @@ var _ = SIGDescribe("Kubectl Port forwarding", func() {
 
 		ginkgo.It("should support forwarding over websockets", func(ctx context.Context) {
 			doTestOverWebSockets(ctx, "localhost", f)
+		})
+
+		ginkgo.It("should support server never read request, and disconnects", func(ctx context.Context) {
+			e2eskipper.Skipf("Ref: https://issues.k8s.io/74551 dependency on the container runtime")
+			doTestConnectionNeverReadRequest(ctx, "localhost", f)
 		})
 	})
 })
