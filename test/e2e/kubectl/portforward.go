@@ -138,13 +138,14 @@ func pfNeverReadRequestBodyPod() *v1.Pod {
 					Image: imageutils.GetE2EImage(imageutils.Agnhost),
 					Args: []string{
 						"netexec",
+						"--http-port=8888",
 					},
 					ReadinessProbe: &v1.Probe{
 						ProbeHandler: v1.ProbeHandler{
 							HTTPGet: &v1.HTTPGetAction{
 								Path: "/healthz",
 								Port: intstr.IntOrString{
-									IntVal: int32(8080),
+									IntVal: int32(8888),
 								},
 								Scheme: v1.URISchemeHTTP,
 							},
@@ -275,7 +276,7 @@ func doTestConnectionNeverReadRequest(ctx context.Context, bindAddress string, f
 	}
 
 	ginkgo.By("Running 'kubectl port-forward'")
-	cmd := runPortForward(f.Namespace.Name, pod.Name, 8080)
+	cmd := runPortForward(f.Namespace.Name, pod.Name, 8888)
 	defer cmd.Stop()
 
 	ginkgo.By("Requesting the local port")
