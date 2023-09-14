@@ -18,8 +18,10 @@ package filters
 
 import (
 	"context"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"sync"
 	"testing"
@@ -28,14 +30,23 @@ import (
 	"github.com/google/uuid"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	auditinternal "k8s.io/apiserver/pkg/apis/audit"
+	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 	"k8s.io/apiserver/pkg/audit"
 	"k8s.io/apiserver/pkg/audit/policy"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/endpoints/responsewriter"
+	"k8s.io/apiserver/plugin/pkg/audit/buffered"
+	"k8s.io/apiserver/plugin/pkg/audit/log"
+	"k8s.io/apiserver/plugin/pkg/audit/webhook"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/client-go/util/retry"
 )
 
 type fakeAuditSink struct {
@@ -855,4 +866,120 @@ func withTestContext(req *http.Request, user user.Info, ae *auditinternal.Event)
 		ctx = request.WithRequestInfo(ctx, info)
 	}
 	return req.WithContext(ctx)
+}
+
+type fakeAuditFile struct{}
+
+func (s fakeAuditFile) Write(p []byte) (n int, err error) {
+	time.Sleep(time.Duration(rand.Int63n(10000)))
+	return len(p), nil
+}
+
+type fakeAuditWebhookAuditBackend struct {
+	server httptest.Server
+}
+
+func (f fakeAuditWebhookAuditBackend) RoundTrip(r *http.Request) (*http.Response, error) {
+	time.Sleep(time.Duration(rand.Int63n(10000)))
+	return &http.Response{
+		StatusCode: http.StatusOK,
+	}, nil
+}
+
+// try to reproduce https://github.com/kubernetes/kubernetes/issues/120507
+func TestAuditBackendRaceCondition(t *testing.T) {
+	defaultFakeLogBackend := log.NewBackend(fakeAuditFile{}, log.FormatJson, auditv1.SchemeGroupVersion)
+
+	testCases := []struct {
+		name           string
+		backendBuilder func() audit.Backend
+	}{
+		{
+			"log audit backend",
+			func() audit.Backend {
+				return defaultFakeLogBackend
+			},
+		},
+
+		{
+			"buffered audit backend",
+			func() audit.Backend {
+				backend := buffered.NewBackend(defaultFakeLogBackend, buffered.BatchConfig{
+					BufferSize:     10000,
+					MaxBatchSize:   1,
+					ThrottleEnable: false,
+					AsyncDelegate:  false,
+				})
+				backend.Run(wait.NeverStop)
+				return backend
+			},
+		},
+		{
+			name: "webhook audit backend",
+			backendBuilder: func() audit.Backend {
+				codecFactory := audit.Codecs
+				codec := codecFactory.LegacyCodec(auditv1.SchemeGroupVersion)
+				negotiatedSerializer := serializer.NegotiatedSerializerWrapper(runtime.SerializerInfo{Serializer: codec})
+				client, err := rest.NewRESTClient(&url.URL{}, "/hello", rest.ClientContentConfig{
+					ContentType: "application/json",
+					Negotiator:  runtime.NewClientNegotiator(negotiatedSerializer, auditv1.SchemeGroupVersion),
+				}, flowcontrol.NewTokenBucketRateLimiter(100, 200), &http.Client{Transport: fakeAuditWebhookAuditBackend{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return webhook.NewDynamicBackend(client, retry.DefaultBackoff)
+			},
+		},
+		{
+			"union audit backend",
+			func() audit.Backend {
+				return audit.Union(defaultFakeLogBackend, defaultFakeLogBackend)
+			},
+		},
+	}
+
+	fakeRuleEvaluator := policy.NewFakePolicyRuleEvaluator(auditinternal.LevelRequestResponse, nil)
+	longRunningCheck := func(r *http.Request, ri *request.RequestInfo) bool { return false }
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), wait.ForeverTestTimeout)
+			defer cancel()
+
+			for {
+				select {
+				case <-ctx.Done():
+					// finished the test
+					return
+				default:
+				}
+				serveStarted := make(chan struct{})
+				req, _ := http.NewRequest(http.MethodGet, "/api/v1/namespaces/default/pods/foo", nil)
+				req = withTestContext(req, &user.DefaultInfo{Name: "admin"}, nil)
+				go func() {
+					<-serveStarted
+					for {
+						audit.AddAuditAnnotations(req.Context(), "a", "b")
+					}
+				}()
+
+				realHandler := http.HandlerFunc(func(writer http.ResponseWriter, r *http.Request) {
+					close(serveStarted)
+					// mock some business logic
+					time.Sleep(time.Millisecond)
+					return
+				})
+
+				handler := WithAudit(realHandler, tc.backendBuilder(), fakeRuleEvaluator, longRunningCheck)
+				handler = WithAuditInit(handler)
+
+				serveFinished := make(chan struct{})
+				go func() {
+					defer close(serveFinished)
+					handler.ServeHTTP(httptest.NewRecorder(), req)
+				}()
+				<-serveFinished
+			}
+		})
+	}
 }
