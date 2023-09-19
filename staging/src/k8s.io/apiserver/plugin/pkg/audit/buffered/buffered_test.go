@@ -18,6 +18,7 @@ package buffered
 
 import (
 	"fmt"
+	"k8s.io/apiserver/pkg/audit"
 	"sync"
 	"testing"
 	"time"
@@ -26,7 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"k8s.io/apimachinery/pkg/util/wait"
-	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/apiserver/plugin/pkg/audit/fake"
 )
 
@@ -34,10 +34,10 @@ var (
 	infiniteTimeCh <-chan time.Time
 )
 
-func newEvents(number int) []*auditinternal.Event {
-	events := make([]*auditinternal.Event, number)
+func newEvents(number int) []*audit.AuditContext {
+	events := make([]*audit.AuditContext, number)
 	for i := range events {
-		events[i] = &auditinternal.Event{}
+		events[i] = &audit.AuditContext{}
 	}
 
 	return events
@@ -163,7 +163,7 @@ func TestBufferedBackendShutdownWaitsForDelegatedCalls(t *testing.T) {
 	delegatedCallStartCh := make(chan struct{})
 	delegatedCallEndCh := make(chan struct{})
 	delegateBackend := &fake.Backend{
-		OnRequest: func(_ []*auditinternal.Event) {
+		OnRequest: func(_ []*audit.AuditContext) {
 			close(delegatedCallStartCh)
 			<-delegatedCallEndCh
 		},
@@ -206,7 +206,7 @@ func TestDelegateProcessEvents(t *testing.T) {
 			config.AsyncDelegate = async
 			wg := sync.WaitGroup{}
 			delegate := &fake.Backend{
-				OnRequest: func(events []*auditinternal.Event) {
+				OnRequest: func(events []*audit.AuditContext) {
 					assert.Len(t, events, config.MaxBatchSize, "Unexpected batch")
 					wg.Done()
 				},

@@ -71,40 +71,53 @@ func NewBackend(delegateBackend audit.Backend, config Config, groupVersion schem
 	}
 }
 
-func (b *backend) ProcessEvents(events ...*auditinternal.Event) bool {
+func (b *backend) ProcessEvents(evs ...*audit.AuditContext) bool {
 	var errors []error
-	var impacted []*auditinternal.Event
-	var batch []*auditinternal.Event
+	var impacted []*audit.AuditContext
+	var batch []*audit.AuditContext
 	var batchSize int64
 	success := true
-	for _, event := range events {
-		size, err := b.calcSize(event)
-		// If event was correctly serialized, but the size is more than allowed
+	for _, ev := range evs {
+		var (
+			size  int64
+			err   error
+			level auditinternal.Level
+			event *auditinternal.Event
+		)
+		ev.VisitEventLocked(func(event *auditinternal.Event) {
+			level = event.Level
+			size, err = b.calcSize(event)
+		})
+		// If ev was correctly serialized, but the size is more than allowed
 		// and it makes sense to do trimming, i.e. there's a request and/or
 		// response present, try to strip away request and response.
-		if err == nil && size > b.c.MaxEventSize && event.Level.GreaterOrEqual(auditinternal.LevelRequest) {
-			event = truncate(event)
+		if err == nil && size > b.c.MaxEventSize && level.GreaterOrEqual(auditinternal.LevelRequest) {
+			ev.VisitEventLocked(func(ev *auditinternal.Event) {
+				level = ev.Level
+				size, err = b.calcSize(ev)
+				event = truncate(ev)
+			})
 			size, err = b.calcSize(event)
 		}
 		if err != nil {
 			errors = append(errors, err)
-			impacted = append(impacted, event)
+			impacted = append(impacted, ev)
 			continue
 		}
 		if size > b.c.MaxEventSize {
-			errors = append(errors, fmt.Errorf("event is too large even after truncating"))
-			impacted = append(impacted, event)
+			errors = append(errors, fmt.Errorf("ev is too large even after truncating"))
+			impacted = append(impacted, ev)
 			continue
 		}
 
 		if len(batch) > 0 && batchSize+size > b.c.MaxBatchSize {
 			success = b.delegateBackend.ProcessEvents(batch...) && success
-			batch = []*auditinternal.Event{}
+			batch = []*audit.AuditContext{}
 			batchSize = 0
 		}
 
 		batchSize += size
-		batch = append(batch, event)
+		batch = append(batch, ev)
 	}
 
 	if len(batch) > 0 {
@@ -112,7 +125,13 @@ func (b *backend) ProcessEvents(events ...*auditinternal.Event) bool {
 	}
 
 	if len(impacted) > 0 {
-		audit.HandlePluginError(PluginName, utilerrors.NewAggregate(errors), impacted...)
+		objs := make([]*auditinternal.Event, len(impacted))
+		for i, e := range impacted {
+			e.VisitEventLocked(func(event *auditinternal.Event) {
+				objs[i] = event
+			})
+		}
+		audit.HandlePluginError(PluginName, utilerrors.NewAggregate(errors), objs...)
 	}
 	return success
 }

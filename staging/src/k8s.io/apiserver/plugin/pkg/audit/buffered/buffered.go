@@ -57,7 +57,7 @@ type bufferedBackend struct {
 	delegateBackend audit.Backend
 
 	// Channel to buffer events before sending to the delegate backend.
-	buffer chan *auditinternal.Event
+	buffer chan *audit.AuditContext
 	// Maximum number of events in a batch sent to the delegate backend.
 	maxBatchSize int
 	// Amount of time to wait after sending a batch to the delegate backend before sending another one.
@@ -93,7 +93,7 @@ func NewBackend(delegate audit.Backend, config BatchConfig) audit.Backend {
 	}
 	return &bufferedBackend{
 		delegateBackend: delegate,
-		buffer:          make(chan *auditinternal.Event, config.BufferSize),
+		buffer:          make(chan *audit.AuditContext, config.BufferSize),
 		maxBatchSize:    config.MaxBatchSize,
 		maxBatchWait:    config.MaxBatchWait,
 		asyncDelegate:   config.AsyncDelegate,
@@ -194,8 +194,8 @@ func (b *bufferedBackend) processIncomingEvents(stopCh <-chan struct{}) {
 //   - Timer has passed.
 //   - Buffer channel is closed and empty.
 //   - stopCh is closed.
-func (b *bufferedBackend) collectEvents(timer <-chan time.Time, stopCh <-chan struct{}) []*auditinternal.Event {
-	var events []*auditinternal.Event
+func (b *bufferedBackend) collectEvents(timer <-chan time.Time, stopCh <-chan struct{}) []*audit.AuditContext {
+	var events []*audit.AuditContext
 
 L:
 	for i := 0; i < b.maxBatchSize; i++ {
@@ -219,7 +219,7 @@ L:
 }
 
 // processEvents process the batch events in a goroutine using delegateBackend's ProcessEvents.
-func (b *bufferedBackend) processEvents(events []*auditinternal.Event) {
+func (b *bufferedBackend) processEvents(events []*audit.AuditContext) {
 	if len(events) == 0 {
 		return
 	}
@@ -251,7 +251,7 @@ func (b *bufferedBackend) processEvents(events []*auditinternal.Event) {
 	}
 }
 
-func (b *bufferedBackend) ProcessEvents(ev ...*auditinternal.Event) bool {
+func (b *bufferedBackend) ProcessEvents(events ...*audit.AuditContext) bool {
 	// The following mechanism is in place to support the situation when audit
 	// events are still coming after the backend was stopped.
 	var sendErr error
@@ -265,15 +265,26 @@ func (b *bufferedBackend) ProcessEvents(ev ...*auditinternal.Event) bool {
 			sendErr = fmt.Errorf("audit backend shut down")
 		}
 		if sendErr != nil {
-			audit.HandlePluginError(PluginName, sendErr, ev[evIndex:]...)
+			obj := make([]*auditinternal.Event, len(events[evIndex:]))
+			for i, e := range events[evIndex:] {
+				e.VisitEventLocked(func(event *auditinternal.Event) {
+					obj[i] = event
+				})
+			}
+			audit.HandlePluginError(PluginName, sendErr, obj...)
 		}
 	}()
 
-	for i, e := range ev {
+	for i, e := range events {
 		evIndex = i
 		// Per the audit.Backend interface these events are reused after being
 		// sent to the Sink. Deep copy and send the copy to the queue.
-		event := e.DeepCopy()
+		event := &audit.AuditContext{}
+
+		e.VisitEventLocked(func(ev *auditinternal.Event) {
+			event.RequestAuditConfig = e.RequestAuditConfig
+			event.Event = *(ev.DeepCopy())
+		})
 
 		select {
 		case b.buffer <- event:

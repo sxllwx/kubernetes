@@ -816,14 +816,14 @@ func (a *fakeAudit) shutdownCompleted() bool {
 	return a.completed
 }
 
-func (a *fakeAudit) ProcessEvents(events ...*auditinternal.Event) bool {
+func (a *fakeAudit) ProcessEvents(events ...*audit.AuditContext) bool {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	if len(a.audits) == 0 {
 		a.audits = map[string]struct{}{}
 	}
 	for _, event := range events {
-		a.audits[string(event.AuditID)] = struct{}{}
+		a.audits[string(event.Event.AuditID)] = struct{}{}
 	}
 
 	return true

@@ -17,6 +17,7 @@ limitations under the License.
 package truncate
 
 import (
+	"k8s.io/apiserver/pkg/audit"
 	"strings"
 	"testing"
 
@@ -77,13 +78,15 @@ func TestTruncatingEvents(t *testing.T) {
 			var event *auditinternal.Event
 
 			fb := &fake.Backend{
-				OnRequest: func(events []*auditinternal.Event) {
+				OnRequest: func(events []*audit.AuditContext) {
 					require.Equal(t, 1, len(events), "Expected single event in batch")
-					event = events[0]
+					event = &events[0].Event
 				},
 			}
 			b := NewBackend(fb, defaultConfig, auditv1.SchemeGroupVersion)
-			b.ProcessEvents(tc.event)
+			b.ProcessEvents(&audit.AuditContext{
+				Event: *tc.event},
+			)
 
 			require.Equal(t, !tc.wantDropped, event != nil, "Incorrect event presence")
 			if tc.wantTruncated {
@@ -128,12 +131,17 @@ func TestSplittingBatches(t *testing.T) {
 
 			var gotBatchCount int
 			fb := &fake.Backend{
-				OnRequest: func(events []*auditinternal.Event) {
+				OnRequest: func(events []*audit.AuditContext) {
 					gotBatchCount++
 				},
 			}
+
 			b := NewBackend(fb, tc.config, auditv1.SchemeGroupVersion)
-			b.ProcessEvents(tc.events...)
+			var events []*audit.AuditContext
+			for _, ev := range tc.events {
+				events = append(events, &audit.AuditContext{Event: *ev})
+			}
+			b.ProcessEvents(events...)
 
 			require.Equal(t, tc.wantBatchCount, gotBatchCount)
 		})

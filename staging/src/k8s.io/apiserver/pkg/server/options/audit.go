@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/sets"
-	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 	"k8s.io/apiserver/pkg/audit"
 	"k8s.io/apiserver/pkg/audit/policy"
@@ -381,8 +380,8 @@ type ignoreErrorsBackend struct {
 	audit.Backend
 }
 
-func (i *ignoreErrorsBackend) ProcessEvents(ev ...*auditinternal.Event) bool {
-	i.Backend.ProcessEvents(ev...)
+func (i *ignoreErrorsBackend) ProcessEvents(events ...*audit.AuditContext) bool {
+	i.Backend.ProcessEvents(events...)
 	return true
 }
 

@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/errors"
-	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 )
 
 // Union returns an audit Backend which logs events to a set of backends. The returned
@@ -37,7 +36,7 @@ type union struct {
 	backends []Backend
 }
 
-func (u union) ProcessEvents(events ...*auditinternal.Event) bool {
+func (u union) ProcessEvents(events ...*AuditContext) bool {
 	success := true
 	for _, backend := range u.backends {
 		success = backend.ProcessEvents(events...) && success

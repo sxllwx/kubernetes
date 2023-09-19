@@ -19,6 +19,7 @@ package endpoints
 import (
 	"bytes"
 	"fmt"
+	"k8s.io/apiserver/pkg/audit"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -39,11 +40,11 @@ type fakeAuditSink struct {
 	events []*auditinternal.Event
 }
 
-func (s *fakeAuditSink) ProcessEvents(evs ...*auditinternal.Event) bool {
+func (s *fakeAuditSink) ProcessEvents(events ...*audit.AuditContext) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	for _, ev := range evs {
-		e := ev.DeepCopy()
+	for _, ev := range events {
+		e := ev.Event.DeepCopy()
 		s.events = append(s.events, e)
 	}
 	return true

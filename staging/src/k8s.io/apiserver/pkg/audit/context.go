@@ -46,6 +46,12 @@ type AuditContext struct {
 	annotationMutex sync.Mutex
 }
 
+func (ac *AuditContext) VisitEventLocked(f func(event *auditinternal.Event)) {
+	ac.annotationMutex.Lock()
+	defer ac.annotationMutex.Unlock()
+	f(&ac.Event)
+}
+
 // Enabled checks whether auditing is enabled for this audit context.
 func (ac *AuditContext) Enabled() bool {
 	// Note: An unset Level should be considered Enabled, so that request data (e.g. annotations)

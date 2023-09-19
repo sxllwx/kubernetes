@@ -54,11 +54,11 @@ type fakeAuditSink struct {
 	events []*auditinternal.Event
 }
 
-func (s *fakeAuditSink) ProcessEvents(evs ...*auditinternal.Event) bool {
+func (s *fakeAuditSink) ProcessEvents(evs ...*audit.AuditContext) bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	for _, e := range evs {
-		event := e.DeepCopy()
+		event := e.Event.DeepCopy()
 		s.events = append(s.events, event)
 	}
 	return true
@@ -123,36 +123,36 @@ func TestConstructResponseWriter(t *testing.T) {
 }
 
 func TestDecorateResponseWriterWithoutChannel(t *testing.T) {
-	ev := &auditinternal.Event{}
+	ev := &audit.AuditContext{}
 	actual := decorateResponseWriter(context.Background(), &responsewriter.FakeResponseWriter{}, ev, nil, nil)
 
 	// write status. This will not block because firstEventSentCh is nil
 	actual.WriteHeader(42)
-	if ev.ResponseStatus == nil {
+	if ev.Event.ResponseStatus == nil {
 		t.Fatalf("Expected ResponseStatus to be non-nil")
 	}
-	if ev.ResponseStatus.Code != 42 {
-		t.Errorf("expected status code 42, got %d", ev.ResponseStatus.Code)
+	if ev.Event.ResponseStatus.Code != 42 {
+		t.Errorf("expected status code 42, got %d", ev.Event.ResponseStatus.Code)
 	}
 }
 
 func TestDecorateResponseWriterWithImplicitWrite(t *testing.T) {
-	ev := &auditinternal.Event{}
+	ev := &audit.AuditContext{}
 	actual := decorateResponseWriter(context.Background(), &responsewriter.FakeResponseWriter{}, ev, nil, nil)
 
 	// write status. This will not block because firstEventSentCh is nil
 	actual.Write([]byte("foo"))
-	if ev.ResponseStatus == nil {
+	if ev.Event.ResponseStatus == nil {
 		t.Fatalf("Expected ResponseStatus to be non-nil")
 	}
-	if ev.ResponseStatus.Code != 200 {
-		t.Errorf("expected status code 200, got %d", ev.ResponseStatus.Code)
+	if ev.Event.ResponseStatus.Code != 200 {
+		t.Errorf("expected status code 200, got %d", ev.Event.ResponseStatus.Code)
 	}
 }
 
 func TestDecorateResponseWriterChannel(t *testing.T) {
 	sink := &fakeAuditSink{}
-	ev := &auditinternal.Event{}
+	ev := &audit.AuditContext{}
 	actual := decorateResponseWriter(context.Background(), &responsewriter.FakeResponseWriter{}, ev, sink, nil)
 
 	done := make(chan struct{})

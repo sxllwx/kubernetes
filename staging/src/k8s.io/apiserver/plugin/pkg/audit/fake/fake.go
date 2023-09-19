@@ -17,7 +17,6 @@ limitations under the License.
 package fake
 
 import (
-	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 	"k8s.io/apiserver/pkg/audit"
 )
 
@@ -25,7 +24,7 @@ var _ audit.Backend = &Backend{}
 
 // Backend is a fake audit backend for testing purposes.
 type Backend struct {
-	OnRequest func(events []*auditinternal.Event)
+	OnRequest func(events []*audit.AuditContext)
 }
 
 // Run does nothing.
@@ -39,9 +38,9 @@ func (b *Backend) Shutdown() {
 }
 
 // ProcessEvents calls a callback on a batch, if present.
-func (b *Backend) ProcessEvents(ev ...*auditinternal.Event) bool {
+func (b *Backend) ProcessEvents(events ...*audit.AuditContext) bool {
 	if b.OnRequest != nil {
-		b.OnRequest(ev)
+		b.OnRequest(events)
 	}
 	return true
 }

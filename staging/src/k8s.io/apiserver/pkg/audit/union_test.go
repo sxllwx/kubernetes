@@ -28,8 +28,12 @@ type fakeBackend struct {
 	events []*auditinternal.Event
 }
 
-func (f *fakeBackend) ProcessEvents(events ...*auditinternal.Event) bool {
-	f.events = append(f.events, events...)
+func (f *fakeBackend) ProcessEvents(events ...*AuditContext) bool {
+	for _, ev := range events {
+		ev.VisitEventLocked(func(event *auditinternal.Event) {
+			f.events = append(f.events, event)
+		})
+	}
 	return true
 }
 
@@ -56,10 +60,12 @@ func TestUnion(t *testing.T) {
 
 	n := 5
 
-	var events []*auditinternal.Event
+	var events []*AuditContext
 	for i := 0; i < n; i++ {
-		events = append(events, &auditinternal.Event{
-			AuditID: types.UID(strconv.Itoa(i)),
+		events = append(events, &AuditContext{
+			Event: auditinternal.Event{
+				AuditID: types.UID(strconv.Itoa(i)),
+			},
 		})
 	}
 	b.ProcessEvents(events...)
@@ -85,7 +91,7 @@ type cannotMultipleRunBackend struct {
 	started chan struct{}
 }
 
-func (b *cannotMultipleRunBackend) ProcessEvents(events ...*auditinternal.Event) bool {
+func (b *cannotMultipleRunBackend) ProcessEvents(events ...*AuditContext) bool {
 	return true
 }
 

@@ -54,7 +54,7 @@ func TestWebhookLoopback(t *testing.T) {
 			config.ExtraConfig.EndpointReconcilerType = reconcilers.NoneEndpointReconcilerType
 
 			// Hook into audit to watch requests
-			config.GenericConfig.AuditBackend = auditSinkFunc(func(events ...*auditinternal.Event) {})
+			config.GenericConfig.AuditBackend = auditSinkFunc(func(events ...*audit.AuditContext) {})
 			config.GenericConfig.AuditPolicyRuleEvaluator = auditPolicyRuleEvaluator(func(attrs authorizer.Attributes) audit.RequestAuditConfig {
 				if attrs.GetPath() == webhookPath {
 					if attrs.GetUser().GetName() != "system:apiserver" {
@@ -118,9 +118,9 @@ func (f auditPolicyRuleEvaluator) EvaluatePolicyRule(attrs authorizer.Attributes
 	return f(attrs)
 }
 
-type auditSinkFunc func(events ...*auditinternal.Event)
+type auditSinkFunc func(events ...*audit.AuditContext)
 
-func (f auditSinkFunc) ProcessEvents(events ...*auditinternal.Event) bool {
+func (f auditSinkFunc) ProcessEvents(events ...*audit.AuditContext) bool {
 	f(events...)
 	return true
 }

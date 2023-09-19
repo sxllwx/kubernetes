@@ -114,18 +114,26 @@ func (b *backend) Shutdown() {
 	// nothing to do here
 }
 
-func (b *backend) ProcessEvents(ev ...*auditinternal.Event) bool {
-	if err := b.processEvents(ev...); err != nil {
-		audit.HandlePluginError(b.String(), err, ev...)
+func (b *backend) ProcessEvents(events ...*audit.AuditContext) bool {
+	if err := b.processEvents(events...); err != nil {
+		evs := make([]*auditinternal.Event, len(events))
+		for _, ev := range events {
+			ev.VisitEventLocked(func(event *auditinternal.Event) {
+				evs = append(evs, event)
+			})
+		}
+		audit.HandlePluginError(b.String(), err, evs...)
 		return false
 	}
 	return true
 }
 
-func (b *backend) processEvents(ev ...*auditinternal.Event) error {
+func (b *backend) processEvents(ev ...*audit.AuditContext) error {
 	var list auditinternal.EventList
 	for _, e := range ev {
-		list.Items = append(list.Items, *e)
+		e.VisitEventLocked(func(event *auditinternal.Event) {
+			list.Items = append(list.Items, *event)
+		})
 	}
 	return b.w.WithExponentialBackoff(context.Background(), func() rest.Result {
 		ctx, span := tracing.Start(context.Background(), "Call Audit Events webhook",

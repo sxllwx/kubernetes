@@ -61,7 +61,7 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 		omitStages := ac.RequestAuditConfig.OmitStages
 
 		ev.Stage = auditinternal.StageRequestReceived
-		if processed := processAuditEvent(ctx, sink, ev, omitStages); !processed {
+		if processed := processAuditEvent(ctx, sink, ac, omitStages); !processed {
 			audit.ApiserverAuditDroppedCounter.WithContext(ctx).Inc()
 			responsewriters.InternalError(w, req, errors.New("failed to store audit event"))
 			return
@@ -75,7 +75,7 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 				longRunningSink = sink
 			}
 		}
-		respWriter := decorateResponseWriter(ctx, w, ev, longRunningSink, omitStages)
+		respWriter := decorateResponseWriter(ctx, w, ac, longRunningSink, omitStages)
 
 		// send audit event when we leave this func, either via a panic or cleanly. In the case of long
 		// running requests, this will be the second audit event.
@@ -89,7 +89,7 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 					Reason:  metav1.StatusReasonInternalError,
 					Message: fmt.Sprintf("APIServer panic'd: %v", r),
 				}
-				processAuditEvent(ctx, sink, ev, omitStages)
+				processAuditEvent(ctx, sink, ac, omitStages)
 				return
 			}
 
@@ -103,14 +103,14 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 			if ev.ResponseStatus == nil && longRunningSink != nil {
 				ev.ResponseStatus = fakedSuccessStatus
 				ev.Stage = auditinternal.StageResponseStarted
-				processAuditEvent(ctx, longRunningSink, ev, omitStages)
+				processAuditEvent(ctx, longRunningSink, ac, omitStages)
 			}
 
 			ev.Stage = auditinternal.StageResponseComplete
 			if ev.ResponseStatus == nil {
 				ev.ResponseStatus = fakedSuccessStatus
 			}
-			processAuditEvent(ctx, sink, ev, omitStages)
+			processAuditEvent(ctx, sink, ac, omitStages)
 		}()
 		handler.ServeHTTP(respWriter, req)
 	})
@@ -177,7 +177,9 @@ func writeLatencyToAnnotation(ctx context.Context, ev *auditinternal.Event) {
 	audit.AddAuditAnnotationsMap(ctx, layerLatencies)
 }
 
-func processAuditEvent(ctx context.Context, sink audit.Sink, ev *auditinternal.Event, omitStages []auditinternal.Stage) bool {
+func processAuditEvent(ctx context.Context, sink audit.Sink, ac *audit.AuditContext, omitStages []auditinternal.Stage) bool {
+	ev := &ac.Event
+
 	for _, stage := range omitStages {
 		if ev.Stage == stage {
 			return true
@@ -195,10 +197,10 @@ func processAuditEvent(ctx context.Context, sink audit.Sink, ev *auditinternal.E
 	}
 
 	audit.ObserveEvent(ctx)
-	return sink.ProcessEvents(ev)
+	return sink.ProcessEvents(ac)
 }
 
-func decorateResponseWriter(ctx context.Context, responseWriter http.ResponseWriter, ev *auditinternal.Event, sink audit.Sink, omitStages []auditinternal.Stage) http.ResponseWriter {
+func decorateResponseWriter(ctx context.Context, responseWriter http.ResponseWriter, ev *audit.AuditContext, sink audit.Sink, omitStages []auditinternal.Stage) http.ResponseWriter {
 	delegate := &auditResponseWriter{
 		ctx:            ctx,
 		ResponseWriter: responseWriter,
@@ -218,7 +220,7 @@ var _ responsewriter.UserProvidedDecorator = &auditResponseWriter{}
 type auditResponseWriter struct {
 	http.ResponseWriter
 	ctx        context.Context
-	event      *auditinternal.Event
+	event      *audit.AuditContext
 	once       sync.Once
 	sink       audit.Sink
 	omitStages []auditinternal.Stage
@@ -230,11 +232,11 @@ func (a *auditResponseWriter) Unwrap() http.ResponseWriter {
 
 func (a *auditResponseWriter) processCode(code int) {
 	a.once.Do(func() {
-		if a.event.ResponseStatus == nil {
-			a.event.ResponseStatus = &metav1.Status{}
+		if a.event.Event.ResponseStatus == nil {
+			a.event.Event.ResponseStatus = &metav1.Status{}
 		}
-		a.event.ResponseStatus.Code = int32(code)
-		a.event.Stage = auditinternal.StageResponseStarted
+		a.event.Event.ResponseStatus.Code = int32(code)
+		a.event.Event.Stage = auditinternal.StageResponseStarted
 
 		if a.sink != nil {
 			processAuditEvent(a.ctx, a.sink, a.event, a.omitStages)

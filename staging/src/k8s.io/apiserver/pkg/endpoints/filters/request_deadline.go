@@ -127,7 +127,7 @@ func withFailedRequestAudit(failedHandler http.Handler, statusErr *apierrors.Sta
 			ev.ResponseStatus.Message = statusErr.Error()
 		}
 
-		rw := decorateResponseWriter(req.Context(), w, ev, sink, ac.RequestAuditConfig.OmitStages)
+		rw := decorateResponseWriter(req.Context(), w, ac, sink, ac.RequestAuditConfig.OmitStages)
 		failedHandler.ServeHTTP(rw, req)
 	})
 }

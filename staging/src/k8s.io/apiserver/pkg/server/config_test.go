@@ -335,6 +335,7 @@ func TestAuthenticationAuditAnnotationsDefaultChain(t *testing.T) {
 	// these should all be the same because the handler chain mutates the event in place
 	want := map[string]string{"pandas": "are awesome", "dogs": "are okay"}
 	for _, event := range backend.events {
+		event := event.Event
 		if event.Stage != auditinternal.StageResponseComplete {
 			t.Errorf("expected event stage to be complete, got: %s", event.Stage)
 		}
@@ -353,12 +354,12 @@ func TestAuthenticationAuditAnnotationsDefaultChain(t *testing.T) {
 }
 
 type testBackend struct {
-	events []*auditinternal.Event
+	events []*audit.AuditContext
 
 	audit.Backend // nil panic if anything other than ProcessEvents called
 }
 
-func (b *testBackend) ProcessEvents(events ...*auditinternal.Event) bool {
+func (b *testBackend) ProcessEvents(events ...*audit.AuditContext) bool {
 	b.events = append(b.events, events...)
 	return true
 }

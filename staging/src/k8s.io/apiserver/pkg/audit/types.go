@@ -16,17 +16,13 @@ limitations under the License.
 
 package audit
 
-import (
-	auditinternal "k8s.io/apiserver/pkg/apis/audit"
-)
-
 type Sink interface {
 	// ProcessEvents handles events. Per audit ID it might be that ProcessEvents is called up to three times.
 	// Errors might be logged by the sink itself. If an error should be fatal, leading to an internal
 	// error, ProcessEvents is supposed to panic. The event must not be mutated and is reused by the caller
 	// after the call returns, i.e. the sink has to make a deepcopy to keep a copy around if necessary.
 	// Returns true on success, may return false on error.
-	ProcessEvents(events ...*auditinternal.Event) bool
+	ProcessEvents(events ...*AuditContext) bool
 }
 
 type Backend interface {

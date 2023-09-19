@@ -59,10 +59,14 @@ func NewBackend(out io.Writer, format string, groupVersion schema.GroupVersion) 
 	}
 }
 
-func (b *backend) ProcessEvents(events ...*auditinternal.Event) bool {
+func (b *backend) ProcessEvents(events ...*audit.AuditContext) bool {
 	success := true
 	for _, ev := range events {
-		success = b.logEvent(ev) && success
+		ev.VisitEventLocked(
+			func(event *auditinternal.Event) {
+				success = b.logEvent(event) && success
+			},
+		)
 	}
 	return success
 }

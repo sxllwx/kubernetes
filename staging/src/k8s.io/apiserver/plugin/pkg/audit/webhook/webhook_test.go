@@ -35,7 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/util/wait"
-	auditinternal "k8s.io/apiserver/pkg/apis/audit"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
 	"k8s.io/apiserver/pkg/audit"
 	"k8s.io/client-go/tools/clientcmd/api/v1"
@@ -132,7 +131,7 @@ func TestWebhook(t *testing.T) {
 		backend := newWebhook(t, s.URL, auditv1.SchemeGroupVersion)
 
 		// Ensure this doesn't return a serialization error.
-		event := &auditinternal.Event{}
+		event := &audit.AuditContext{}
 		require.NoError(t, backend.processEvents(event), fmt.Sprintf("failed to send events, apiVersion: %s", version))
 		require.True(t, gotEvents, fmt.Sprintf("no events received, apiVersion: %s", version))
 	}
