@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +42,7 @@ import (
 	_ "k8s.io/kubernetes/pkg/apis/core/install"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/features"
+	"k8s.io/utils/pointer"
 )
 
 var (
@@ -1672,5 +1675,57 @@ func TestControllerV2GetJobsToBeReconciled(t *testing.T) {
 				t.Errorf("\nExpected %#v,\nbut got %#v", tt.expected, actual)
 			}
 		})
+	}
+}
+
+func TestIssue118706(t *testing.T) {
+	now, err := time.Parse(time.DateTime, "2023-06-19 13:11:04")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastScheduleTime, err := time.Parse(time.RFC1123Z, "Wed, 31 May 2023 12:00:00 +0600")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	testCases := []struct {
+		cronJob batchv1.CronJob
+	}{
+		{
+			cronJob: batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "parts-panel-cronjob-abcp-products-data",
+				},
+				Spec: batchv1.CronJobSpec{
+					Schedule:                "0 12 * * 3", // 表达式表示在每个月的每个周三的12点整执行任务。
+					ConcurrencyPolicy:       batchv1.ForbidConcurrent,
+					StartingDeadlineSeconds: pointer.Int64(30),
+				},
+				Status: batchv1.CronJobStatus{
+					LastScheduleTime: &metav1.Time{
+						Time: lastScheduleTime,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		sched, err := cron.ParseStandard(formatSchedule(false, &tc.cronJob, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		scheduledTime, err := getNextScheduleTime(tc.cronJob, now, sched, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if scheduledTime == nil {
+			ret := nextScheduledTimeDuration(tc.cronJob, sched, now)
+			if *ret < 0 {
+				t.Fatal("next scheduledTime duration < 0")
+			}
+		}
 	}
 }
