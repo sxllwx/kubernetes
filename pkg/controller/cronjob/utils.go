@@ -68,6 +68,7 @@ func getNextScheduleTime(cj batchv1.CronJob, now time.Time, schedule cron.Schedu
 		earliestTime time.Time
 	)
 	if cj.Status.LastScheduleTime != nil {
+		// (sxllwx): 假设CronJob的运行的间隔很短并且这个Job本身跑的很快, 最早应该调度的时间就是上次调度的时间
 		earliestTime = cj.Status.LastScheduleTime.Time
 	} else {
 		// If none found, then this is either a recently created cronJob,
@@ -80,6 +81,7 @@ func getNextScheduleTime(cj batchv1.CronJob, now time.Time, schedule cron.Schedu
 	}
 	if cj.Spec.StartingDeadlineSeconds != nil {
 		// Controller is not going to schedule anything below this point
+		// (sxllwx): 现在之前的30s内能跑，我们就跑
 		schedulingDeadline := now.Add(-time.Second * time.Duration(*cj.Spec.StartingDeadlineSeconds))
 
 		if schedulingDeadline.After(earliestTime) {
@@ -123,20 +125,25 @@ func getMostRecentScheduleTime(earliestTime time.Time, now time.Time, schedule c
 	t2 := schedule.Next(t1)
 
 	if now.Before(t1) {
+		// (sxllwx):  下一轮启动的时间还没到
 		return nil, 0, nil
 	}
 	if now.Before(t2) {
+		// (sxllwx):  错过了一轮，我们返回上一轮调度的时间
 		return &t1, 1, nil
 	}
 
 	// It is possible for cron.ParseStandard("59 23 31 2 *") to return an invalid schedule
 	// seconds - 59, minute - 23, hour - 31 (?!)  dom - 2, and dow is optional, clearly 31 is invalid
 	// In this case the timeBetweenTwoSchedules will be 0, and we error out the invalid schedule
+	// (sxllwx): 获得调度区间的大小，以秒为单位
 	timeBetweenTwoSchedules := int64(t2.Sub(t1).Round(time.Second).Seconds())
 	if timeBetweenTwoSchedules < 1 {
 		return nil, 0, fmt.Errorf("time difference between two schedules less than 1 second")
 	}
+	// (sxllwx): 当前到t1 过了多久？
 	timeElapsed := int64(now.Sub(t1).Seconds())
+	// (sxllwx): 已经丢失了 t1, t2， 已经更多了, 那么可以计算出来，now到t1差了多少次？ +1 的原因是t1本身也没调度，我们要加上
 	numberOfMissedSchedules := (timeElapsed / timeBetweenTwoSchedules) + 1
 	t := time.Unix(t1.Unix()+((numberOfMissedSchedules-1)*timeBetweenTwoSchedules), 0).UTC()
 	return &t, numberOfMissedSchedules, nil

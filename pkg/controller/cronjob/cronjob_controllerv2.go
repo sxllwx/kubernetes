@@ -526,6 +526,7 @@ func (jm *ControllerV2) syncCronJob(
 		return cronJob, nil, updateStatus, nil
 	}
 	if scheduledTime == nil {
+		// (sxllwx) 故障的逻辑在这里
 		// no unmet start time, return cj,.
 		// The only time this should happen is if queue is filled after restart.
 		// Otherwise, the queue is always suppose to trigger sync function at the time of
@@ -661,9 +662,7 @@ func nextScheduledTimeDuration(cj batchv1.CronJob, sched cron.Schedule, now time
 		// no missed schedules since earliestTime
 		mostRecentTime = &earliestTime
 	}
-
 	t := sched.Next(*mostRecentTime).Add(nextScheduleDelta).Sub(now)
-
 	return &t
 }
 
