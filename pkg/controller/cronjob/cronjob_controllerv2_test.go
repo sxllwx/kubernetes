@@ -18,7 +18,6 @@ package cronjob
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -1684,87 +1683,96 @@ func TestIssue118706(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	lastScheduleTime, err := time.Parse(time.RFC1123Z, "Wed, 31 May 2023 12:00:00 +0600")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	testCases := []struct {
-		cronJobMaker func(t *testing.T) *batchv1.CronJob
-		now          time.Time
+		cronJob *batchv1.CronJob
 	}{
 		{
-			cronJobMaker: func(t *testing.T) *batchv1.CronJob {
-				lastScheduleTime, err := time.Parse(time.RFC1123Z, "Fri, 16 Jun 2023 16:00:00 +0600")
-				if err != nil {
-					t.Fatal(err)
-				}
-				return &batchv1.CronJob{
-					TypeMeta: metav1.TypeMeta{},
-					ObjectMeta: metav1.ObjectMeta{
-						CreationTimestamp: metav1.Time{},
-						Name:              "parts-panel-cronjob-products-data",
+			cronJob: &batchv1.CronJob{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "parts-panel-cronjob-abcp-products-data",
+				},
+				Spec: batchv1.CronJobSpec{
+					Schedule:                "0 12 * * 3", // 表达式表示在每个月的每个周三的12点整执行任务。
+					ConcurrencyPolicy:       batchv1.ForbidConcurrent,
+					StartingDeadlineSeconds: pointer.Int64(30),
+				},
+				Status: batchv1.CronJobStatus{
+					LastScheduleTime: &metav1.Time{
+						Time: lastScheduleTime,
 					},
-					Spec: batchv1.CronJobSpec{
-						Schedule:          "0 16 * * *",
-						ConcurrencyPolicy: batchv1.ForbidConcurrent,
-					},
-					Status: batchv1.CronJobStatus{
-						LastScheduleTime: &metav1.Time{
-							Time: lastScheduleTime,
-						},
-					},
-				}
+				},
 			},
-			now: now,
-		},
-		{
-			cronJobMaker: func(t *testing.T) *batchv1.CronJob {
-				lastScheduleTime1, err := time.Parse(time.RFC1123Z, "Wed, 31 May 2023 12:00:00 +0600")
-				if err != nil {
-					t.Fatal(err)
-				}
-				return &batchv1.CronJob{
-					TypeMeta: metav1.TypeMeta{},
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "parts-panel-cronjob-abcp-products-data",
-					},
-					Spec: batchv1.CronJobSpec{
-						Schedule:                "0 12 * * 3",
-						ConcurrencyPolicy:       batchv1.ForbidConcurrent,
-						StartingDeadlineSeconds: pointer.Int64(30),
-					},
-					Status: batchv1.CronJobStatus{
-						LastScheduleTime: &metav1.Time{
-							Time: lastScheduleTime1,
-						},
-					},
-				}
-			},
-
-			now: now,
 		},
 	}
 
 	for _, tc := range testCases {
-		cronJob := tc.cronJobMaker(t)
-		now := tc.now
+		cronJob := tc.cronJob
 		sched, err := cron.ParseStandard(formatSchedule(false, cronJob, nil))
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		scheduledTime, err := getNextScheduleTime(*cronJob, tc.now, sched, nil)
+		scheduledTime, err := getNextScheduleTime(*cronJob, now, sched, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if scheduledTime == nil {
-			// 这里的核心原因是没有考虑以当前的时间触发
-			rst, _, err := getMostRecentScheduleTime(cronJob.Status.LastScheduleTime.Time, now, sched)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Log(rst)
 			ret := nextScheduledTimeDuration(*cronJob, sched, now)
-			fmt.Println(ret)
-			fmt.Println(now.Add(*ret))
-			t.Log(ret)
+			if *ret < 0 {
+				t.Fatal("bad")
+			}
 		}
 	}
 }
+
+//func TestTime(t *testing.T) {
+//	formart := "2006-01-02 15:04:05.999999999 -0700 MST"
+//	ok, err := time.Parse(formart, "2023-06-14 14:00:00 +0800 CST")
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	bad, err := time.Parse(formart, "2023-06-14 06:00:00 +0000 UTC")
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//
+//	cronJob := &batchv1.CronJob{
+//		TypeMeta: metav1.TypeMeta{},
+//		ObjectMeta: metav1.ObjectMeta{
+//			Name: "parts-panel-cronjob-abcp-products-data",
+//		},
+//		Spec: batchv1.CronJobSpec{
+//			Schedule:                "0 12 * * 3", // 表达式表示在每个月的每个周三的12点整执行任务。
+//			ConcurrencyPolicy:       batchv1.ForbidConcurrent,
+//			StartingDeadlineSeconds: pointer.Int64(30),
+//		},
+//	}
+//
+//	schedule := formatSchedule(true, cronJob, nil)
+//	//loc, _ := time.LoadLocation("Europe/Paris")
+//	//sched, err := cron.NewParser(cron.Second).Parse(cronJob.Spec.Schedule)
+//	sched, err := cron.ParseStandard(schedule)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//
+//	if ok.Compare(bad) != 0 {
+//		t.Fatal("???")
+//	}
+//
+//	okNext := sched.Next(ok)
+//	//okNextCopy := sched.Next(ok)
+//	//t.Log(okNextCopy)
+//	badNext := sched.Next(bad)
+//
+//	result := okNext.Compare(badNext)
+//	if result != 0 {
+//		t.Fatal("?")
+//	}
+//}
