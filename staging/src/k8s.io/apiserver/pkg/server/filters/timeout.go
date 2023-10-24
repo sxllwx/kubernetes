@@ -111,6 +111,7 @@ func (t *timeoutHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			resultCh <- err
 		}()
+		// 这里还在Block，所以不是其他的timeout外面的handler出现了write annotations的逻辑
 		t.handler.ServeHTTP(w, rCopy)
 	}()
 	select {

@@ -112,6 +112,8 @@ func WithAudit(handler http.Handler, sink audit.Sink, policy audit.PolicyRuleEva
 			if ev.ResponseStatus == nil {
 				ev.ResponseStatus = fakedSuccessStatus
 			}
+			// https://github.com/kubernetes/kubernetes/issues/120507
+			// 出现fatal的位置在这里
 			processAuditEvent(ctx, sink, ev, omitStages)
 		}()
 		handler.ServeHTTP(respWriter, req)
