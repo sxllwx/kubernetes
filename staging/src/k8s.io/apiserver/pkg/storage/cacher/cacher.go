@@ -465,6 +465,7 @@ func (c *Cacher) startCaching(stopChannel <-chan struct{}) {
 	if err := c.reflector.ListAndWatch(stopChannel); err != nil {
 		klog.Errorf("cacher (%v): unexpected ListAndWatch error: %v; reinitializing...", c.groupResource.String(), err)
 	}
+	panic("watch cacher list and watch end...")
 }
 
 // Versioner implements storage.Interface.
