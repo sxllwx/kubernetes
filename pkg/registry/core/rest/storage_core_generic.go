@@ -18,6 +18,8 @@ package rest
 
 import (
 	"context"
+	"k8s.io/apiserver/pkg/storage"
+	"k8s.io/apiserver/pkg/util/feature"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -86,6 +88,37 @@ func (c *GenericConfig) NewRESTStorage(apiResourceConfigSource serverstorage.API
 	configMapStorage, err := configmapstore.NewREST(restOptionsGetter)
 	if err != nil {
 		return genericapiserver.APIGroupInfo{}, err
+	}
+
+	//
+	if feature.DefaultFeatureGate.Enabled(features.CheckVersion) {
+		//
+		versionConfigMap := configMapStorage.New().(*api.ConfigMap)
+		versionConfigMap.SetNamespace(metav1.NamespaceSystem)
+		versionConfigMap.SetName("version-configmap")
+		name, err := configMapStorage.ObjectNameFunc(versionConfigMap)
+		if err != nil {
+			return genericapiserver.APIGroupInfo{}, err
+		}
+		got, err := configMapStorage.Get(context.TODO(), name, &metav1.GetOptions{})
+		switch {
+		case err != nil:
+			if !storage.IsNotFound(err) {
+				return genericapiserver.APIGroupInfo{}, err
+			}
+
+			// do create
+
+			ctx := context.WithValue(context.Background(), "from", "kube-apiserver")
+			_, err := configMapStorage.Create(ctx, versionConfigMap, nil, &metav1.CreateOptions{})
+			if err != nil{
+				return genericapiserver.APIGroupInfo{}, err
+			}
+
+		case err == nil:
+			// compare the version,
+			...
+		}
 	}
 
 	namespaceStorage, namespaceStatusStorage, namespaceFinalizeStorage, err := namespacestore.NewREST(restOptionsGetter)
